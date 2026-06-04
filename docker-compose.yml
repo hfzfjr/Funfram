@@ -1,0 +1,87 @@
+version: "3.8"
+
+services:
+  # Frontend - Next.js
+  frontend-nextjs:
+    build:
+      context: ./apps/frontend-nextjs
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_WS_GAME_URL=ws://backend-websockets:5001/socket
+      - NEXT_PUBLIC_WS_WEBRTC_URL=ws://backend-webrtc:5002
+    depends_on:
+      - backend-websockets
+      - backend-webrtc
+    networks:
+      - funfram-network
+
+  # Backend - WebSocket Server (Go)
+  backend-websockets:
+    build:
+      context: ./apps/backend-websockets
+      dockerfile: Dockerfile
+    ports:
+      - "5001:5001"
+    environment:
+      - PORT=5001
+    networks:
+      - funfram-network
+
+  # Backend - WebRTC Signaling Server (Node.js)
+  backend-webrtc:
+    build:
+      context: ./apps/backend-webrtc
+      dockerfile: Dockerfile
+    ports:
+      - "5002:5002"
+    environment:
+      - PORT=5002
+      - TURN_SERVER_URL=turn:coturn:3478
+      - TURN_USERNAME=funfram
+      - TURN_CREDENTIAL=funfram_secret
+    depends_on:
+      - coturn
+    networks:
+      - funfram-network
+
+  # TURN Server - Coturn
+  coturn:
+    image: coturn/coturn:4.6.2
+    command:
+      - -n
+      - --log-file=stdout
+      - --external-ip=$(AUTOMAP_HELPER_EXTERNAL_IP)
+      - --fingerprint
+      - --lt-cred-mech
+      - --user=funfram:funfram_secret
+      - --realm=funfram.com
+      - --no-cli
+      - --no-tlsv1
+      - --no-tlsv1_1
+      - --no-stdout-log
+    network_mode: "host"
+    environment:
+      - AUTOMAP_HELPER_EXTERNAL_IP=${AUTOMAP_HELPER_EXTERNAL_IP:-127.0.0.1}
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infrastructure/nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - frontend-nextjs
+      - backend-websockets
+      - backend-webrtc
+    networks:
+      - funfram-network
+
+networks:
+  funfram-network:
+    driver: bridge
