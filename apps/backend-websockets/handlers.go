@@ -26,6 +26,12 @@ type ClientMessage struct {
 }
 
 func handleConnections(hub *Hub, ws *websocket.Conn) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("❌ PANIC in handleConnections: %v\n", r)
+		}
+	}()
+
 	// Membuat client baru
 	userID := fmt.Sprintf("user-%d", time.Now().UnixNano())
 	client := &Client{
@@ -35,24 +41,28 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 		Username: "",
 	}
 
+	fmt.Printf("✅ New WebSocket connection: %s from %s\n", userID, ws.RemoteAddr())
+
 	defer func() {
 		hub.LeaveLobby(userID)
 		ws.Close()
-		fmt.Printf("Klien putus: %s\n", userID)
+		fmt.Printf("❌ Client disconnected: %s\n", userID)
 	}()
 
 	for {
 		// Membaca pesan dari client
 		_, message, err := ws.ReadMessage()
 		if err != nil {
-			fmt.Printf("Error reading message: %v\n", err)
+			fmt.Printf("❌ Error reading message from %s: %v\n", userID, err)
 			break
 		}
+
+		fmt.Printf("📨 Raw message from %s: %s\n", userID, string(message))
 
 		// Parse message
 		var msg ClientMessage
 		if err := json.Unmarshal(message, &msg); err != nil {
-			fmt.Printf("Error parsing message: %v\n", err)
+			fmt.Printf("❌ Error parsing message: %v\n", err)
 			continue
 		}
 
@@ -61,17 +71,43 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 		// Handle different message types
 		switch msg.Type {
 		case "CREATE_LOBBY":
+			fmt.Printf("🎯 CREATE_LOBBY from %s (username: %s)\n", userID, msg.Username)
+
+			defer func() {
+				if r := recover(); r != nil {
+					fmt.Printf("❌ PANIC in CREATE_LOBBY: %v\n", r)
+					sendError(ws, "Internal server error")
+				}
+			}()
+
 			lobby := hub.CreateLobby(userID, msg.Username)
+			if lobby == nil {
+				fmt.Printf("❌ CreateLobby returned nil\n")
+				sendError(ws, "Failed to create lobby")
+				continue
+			}
+			fmt.Printf("✅ Lobby created: %s with code %s\n", lobby.ID, lobby.InviteCode)
+
 			err := hub.JoinLobby(lobby.ID, userID, msg.Username, client)
 			if err != nil {
+				fmt.Printf("❌ JoinLobby error: %v\n", err)
 				sendError(ws, err.Error())
 				continue
 			}
-			sendResponse(ws, map[string]interface{}{
+			fmt.Printf("✅ JoinLobby successful\n")
+
+			response := map[string]interface{}{
 				"type":       "LOBBY_CREATED",
 				"lobbyId":    lobby.ID,
 				"inviteCode": lobby.InviteCode,
-			})
+			}
+			fmt.Printf("📤 Sending response: %+v\n", response)
+			err = sendResponse(ws, response)
+			if err != nil {
+				fmt.Printf("❌ sendResponse error: %v\n", err)
+			} else {
+				fmt.Printf("✅ Response sent successfully\n")
+			}
 
 		case "JOIN_LOBBY":
 			if msg.LobbyID != "" {
