@@ -1,0 +1,100 @@
+.button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 150px;
+    border: none;
+    padding: 20px 20px;
+    border-radius: 50px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.invite-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(to right, #0b8bd1, #05469e);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 50px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.invite-button:hover {
+    background-color: #2563eb;
+}
+
+.invite-button:active {
+    transform: scale(0.95);
+}
+
+.next-frame-button {
+    background: linear-gradient(to right, #08A7FD, #0052BE);
+    color: white;
+}
+
+.next-frame-button:hover {
+    background: linear-gradient(to right, #08A7FD, #0052BE);
+}
+
+.next-frame-button:active {
+    transform: scale(0.95);
+}
+
+.leave-frame-button {
+    background: #93000A;
+    color: white;
+}
+
+.leave-frame-button:hover {
+    background: #93000A;
+}
+
+.leave-frame-button:active {
+    transform: scale(0.95);
+}
+
+.toggle-button {
+    background: #00285D;
+    color: white;
+}
+
+.toggle-button:hover {
+    background: #00285D;
+}
+
+.toggle-button:active {
+    transform: scale(0.95);
+}
+
+.chat-button {
+    background: #191B22;
+    color: white;
+}
+
+.chat-button:hover {
+    background: #191B22;
+}
+
+.chat-button:active {
+    transform: scale(0.95);
+}
+
+.unread-badge {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 8px;
+    height: 8px;
+    background-color: #ef4444;
+    border-radius: 50%;
+    border: 2px solid #1a1a1a;
+}

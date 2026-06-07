@@ -1,0 +1,46 @@
+.container {
+    width: 100%;
+    margin-top: 80px;
+    height: calc(100vh - 180px);
+    display: flex;
+    gap: 16px;
+    padding: 16px;
+    background-color: black;
+    overflow: hidden;
+}
+
+.side {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.matching {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+}
+
+.spinner {
+    width: 48px;
+    height: 48px;
+    border: 4px solid #3a3a3a;
+    border-top-color: #3b82f6;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.matchingText {
+    color: #a1a1aa;
+    font-size: 16px;
+    font-weight: 500;
+}
