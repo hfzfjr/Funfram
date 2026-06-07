@@ -464,3 +464,49 @@ Menjadikan Funfram.com sebagai platform sosial interaktif yang menggabungkan:
 - Creator Interaction
 
 dalam satu ekosistem real-time yang ringan, aman, dan scalable.
+
+---
+
+## 11. Alur Aplikasi (Application Flow)
+
+### Alur Login dan Masuk ke Aplikasi
+
+1. **Akses Domain**
+   - Pengguna mengakses `funframe.roomify.space` (domain sementara, menggunakan subdomain dari project lain)
+   - Pengguna diarahkan ke halaman utama aplikasi
+
+2. **Overlay Login**
+   - Segera setelah halaman dimuat, overlay login muncul
+   - Overlay ini **tidak bisa ditutup** sebelum pengguna login
+   - Untuk tahap development, login hanya memerlukan **username**
+   - Di masa depan, login akan menggunakan **Google OAuth**
+
+3. **Tampilan Utama**
+   - Setelah login berhasil, pengguna melihat tampilan video conferencing
+   - Layout terdiri dari:
+     - **Header**: Logo "FunFram", indikator "Live", navigasi "FunVideo" dan "FunChat", tombol "Invite Friends"
+     - **Frame Kiri**: Untuk diri sendiri dan teman yang diundang
+     - **Frame Kanan**: Untuk orang random yang akan dicari (max 4 orang, min 1 orang)
+     - **Footer**: Kontrol buttons (Next Frame, Leave Frame, Microphone, Camera, Chat)
+
+4. **Grid Layout System**
+   - Sistem frame menggunakan grid layout yang dinamis
+   - Frame kiri: untuk user dan invited friends
+   - Frame kanan: untuk random matches
+   - Konfigurasi yang didukung:
+     - 1 to 1 (min)
+     - 1 to 2
+     - 1 to 3
+     - 1 to 4
+     - 2 to 1
+     - 2 to 2
+     - 2 to 3
+     - 2 to 4
+     - 3 to 1
+     - 3 to 2
+     - 3 to 3
+     - 3 to 4
+     - 4 to 1
+     - 4 to 2
+     - 4 to 3
+     - 4 to 4 (max)

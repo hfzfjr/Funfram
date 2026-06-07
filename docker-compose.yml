@@ -1,4 +1,4 @@
-version: "3.8"
+version: '3.8'
 
 services:
   # Frontend - Next.js
@@ -10,13 +10,14 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      - NEXT_PUBLIC_WS_GAME_URL=ws://backend-websockets:5001/socket
-      - NEXT_PUBLIC_WS_WEBRTC_URL=ws://backend-webrtc:5002
+      - NEXT_PUBLIC_WS_GAME_URL=${NEXT_PUBLIC_WS_GAME_URL:-ws://localhost:5001/socket}
+      - NEXT_PUBLIC_WS_WEBRTC_URL=${NEXT_PUBLIC_WS_WEBRTC_URL:-ws://localhost:5002}
     depends_on:
       - backend-websockets
       - backend-webrtc
     networks:
       - funfram-network
+    restart: unless-stopped
 
   # Backend - WebSocket Server (Go)
   backend-websockets:
@@ -27,8 +28,10 @@ services:
       - "5001:5001"
     environment:
       - PORT=5001
+      - DATABASE_URL=${DATABASE_URL:-}
     networks:
       - funfram-network
+    restart: unless-stopped
 
   # Backend - WebRTC Signaling Server (Node.js)
   backend-webrtc:
@@ -39,34 +42,35 @@ services:
       - "5002:5002"
     environment:
       - PORT=5002
-      - TURN_SERVER_URL=turn:coturn:3478
-      - TURN_USERNAME=funfram
-      - TURN_CREDENTIAL=funfram_secret
-    depends_on:
-      - coturn
+      - TURN_SERVER_URL=${TURN_SERVER_URL:-}
+      - TURN_USERNAME=${TURN_USERNAME:-funfram}
+      - TURN_CREDENTIAL=${TURN_CREDENTIAL:-funfram_secret}
     networks:
       - funfram-network
+    restart: unless-stopped
 
-  # TURN Server - Coturn
+  # TURN Server - Coturn (Optional - comment out if using Cloudflare only)
   coturn:
     image: coturn/coturn:4.6.2
     command:
       - -n
       - --log-file=stdout
-      - --external-ip=$(AUTOMAP_HELPER_EXTERNAL_IP)
+      - --external-ip=${TURN_EXTERNAL_IP:-127.0.0.1}
       - --fingerprint
       - --lt-cred-mech
-      - --user=funfram:funfram_secret
-      - --realm=funfram.com
+      - --user=${TURN_USERNAME:-funfram}:${TURN_CREDENTIAL:-funfram_secret}
+      - --realm=${TURN_REALM:-funfram.com}
       - --no-cli
       - --no-tlsv1
       - --no-tlsv1_1
       - --no-stdout-log
     network_mode: "host"
     environment:
-      - AUTOMAP_HELPER_EXTERNAL_IP=${AUTOMAP_HELPER_EXTERNAL_IP:-127.0.0.1}
+      - TURN_EXTERNAL_IP=${TURN_EXTERNAL_IP:-127.0.0.1}
+    restart: unless-stopped
 
-  # Nginx Reverse Proxy
+  # Nginx Reverse Proxy (Optional - not needed with Cloudflare tunneling)
+  # Comment out this service if using Cloudflare tunneling
   nginx:
     image: nginx:alpine
     ports:
@@ -81,6 +85,9 @@ services:
       - backend-webrtc
     networks:
       - funfram-network
+    restart: unless-stopped
+    profiles:
+      - without-cloudflare
 
 networks:
   funfram-network:
