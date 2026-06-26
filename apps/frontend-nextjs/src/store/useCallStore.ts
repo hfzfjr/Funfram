@@ -43,24 +43,24 @@ export interface CallStore {
     // FSM States
     fsmState: AppFsmState;
     matchmakingState: MatchmakingState;
-    
+
     // Identifiers
     localUser: Participant | null;
     frameId: string | null;
     inviteToken: string | null;
     sessionId: string | null;
-    
+
     // Participants
     leftParticipants: Participant[]; // Local Frame (Frame A)
     rightParticipants: Participant[]; // Remote Frame (Frame B)
-    
+
     // Chats (Temporary, reset on leave)
     generalChat: ChatMessage[];
-    
+
     // Game state
     gameInvite: GameInvite | null;
     gameState: GuessDrawingState | null;
-    
+
     // Rate Limiting Cooldown (FRAME_NEXT)
     lastNextFrameClick: number;
 
@@ -68,7 +68,7 @@ export interface CallStore {
     setFsmState: (state: AppFsmState) => void;
     setMatchmakingState: (state: MatchmakingState) => void;
     setLocalUser: (user: Participant | null) => void;
-    
+
     // Frame actions
     createFrame: (username: string) => void;
     joinFrame: (frameId: string, inviteToken: string, username: string) => void;
@@ -76,15 +76,15 @@ export interface CallStore {
     addParticipant: (side: FrameSide, participant: Participant) => void;
     removeParticipant: (side: FrameSide, id: string) => void;
     kickParticipant: (id: string) => void;
-    
+
     // Matchmaking / Session actions
     setSession: (session: Session | null) => void;
     triggerNextFrame: () => boolean; // returns true if action allowed (rate limited)
-    
+
     // Chat Actions
     sendGeneralMessage: (text: string) => void;
     addGeneralMessage: (msg: ChatMessage) => void;
-    
+
     // Game Actions
     sendGameInvite: (gameType: string) => void;
     receiveGameInvite: (invite: GameInvite) => void;
@@ -94,7 +94,7 @@ export interface CallStore {
     dispatchCanvasEvent: (event: CanvasEvent) => void;
     receiveCanvasEvent: (event: CanvasEvent) => void;
     submitGuess: (text: string) => void;
-    
+
     // Participant Controls (Moderation / UI status)
     muteParticipant: (id: string, isMuted: boolean) => void;
     toggleCamera: (id: string, isCameraOff: boolean) => void;
@@ -103,7 +103,7 @@ export interface CallStore {
     // Reconnection / Session recovery
     resumeSession: (savedState: any) => void;
     setLocalStream: (stream: MediaStream | null) => void;
-    
+
     reset: () => void;
 }
 
@@ -154,7 +154,7 @@ export const useCallStore = create<CallStore>((set, get) => ({
 
     leaveFrame: () => {
         const { leftParticipants, localUser } = get();
-        
+
         // If local user is leaving
         if (localUser) {
             // Ownership Transfer Algorithm (Join order)
@@ -174,9 +174,9 @@ export const useCallStore = create<CallStore>((set, get) => ({
         const list = side === 'left' ? state.leftParticipants : state.rightParticipants;
         if (list.some(p => p.id === participant.id)) return {};
         if (list.length >= 4) return {};
-        
+
         const updatedList = [...list, participant].sort((a, b) => a.joinOrder - b.joinOrder);
-        
+
         // Recalculate ownership for local frame
         if (side === 'left' && updatedList.length > 0) {
             updatedList.forEach((p, idx) => {
@@ -201,7 +201,7 @@ export const useCallStore = create<CallStore>((set, get) => ({
     removeParticipant: (side, id) => set((state) => {
         const list = side === 'left' ? state.leftParticipants : state.rightParticipants;
         const updatedList = list.filter(p => p.id !== id);
-        
+
         // Recalculate ownership if left frame
         if (side === 'left' && updatedList.length > 0) {
             updatedList.forEach((p, idx) => {
@@ -240,13 +240,30 @@ export const useCallStore = create<CallStore>((set, get) => ({
             return;
         }
 
+        // Preserve local user's stream when setting session
+        const state = get();
+        const localUserId = state.localUser?.id;
+        const localStream = state.localUser?.stream;
+
+        // Update leftParticipants with preserved stream for local user
+        const updatedLeftParticipants = session.frameA.members.map(p => {
+            if (p.id === localUserId && localStream) {
+                return { ...p, stream: localStream };
+            }
+            return p;
+        });
+
+        // Update localUser if it's in the new leftParticipants
+        const updatedLocalUser = updatedLeftParticipants.find(p => p.id === localUserId) || state.localUser;
+
         // Set state to MATCHED
         set({
             sessionId: session.sessionId,
-            leftParticipants: session.frameA.members,
+            leftParticipants: updatedLeftParticipants,
             rightParticipants: session.frameB.members,
             fsmState: 'MATCHED',
             matchmakingState: 'ActiveMeeting',
+            localUser: updatedLocalUser,
         });
     },
 
@@ -275,7 +292,7 @@ export const useCallStore = create<CallStore>((set, get) => ({
     sendGeneralMessage: (text) => {
         const { localUser, generalChat } = get();
         if (!localUser) return;
-        
+
         const newMessage: ChatMessage = {
             id: 'msg-' + Math.random().toString(36).substring(2, 9),
             senderId: localUser.id,
@@ -373,7 +390,7 @@ export const useCallStore = create<CallStore>((set, get) => ({
         const mapFunc = (p: Participant) => p.id === id ? { ...p, isMuted } : p;
         const left = state.leftParticipants.map(mapFunc);
         const right = state.rightParticipants.map(mapFunc);
-        
+
         let local = state.localUser;
         if (local && local.id === id) {
             local = { ...local, isMuted };
@@ -390,7 +407,7 @@ export const useCallStore = create<CallStore>((set, get) => ({
         const mapFunc = (p: Participant) => p.id === id ? { ...p, isCameraOff } : p;
         const left = state.leftParticipants.map(mapFunc);
         const right = state.rightParticipants.map(mapFunc);
-        
+
         let local = state.localUser;
         if (local && local.id === id) {
             local = { ...local, isCameraOff };
@@ -409,7 +426,7 @@ export const useCallStore = create<CallStore>((set, get) => ({
 
     resumeSession: (savedState) => {
         if (!savedState) return;
-        
+
         const local: Participant = {
             id: savedState.userId,
             stream: null,
