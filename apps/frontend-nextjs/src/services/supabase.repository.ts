@@ -13,6 +13,17 @@ export interface DatabaseSession {
     endedAt: string | null;
 }
 
+export interface DatabaseInviteLink {
+    id: string;
+    frameId: string;
+    inviteCode: string;
+    createdBy: string;
+    createdAt: string;
+    expiresAt: string | null;
+    isActive: boolean;
+    timesUsed: number;
+}
+
 export class SupabaseRepository {
     private static instance: SupabaseRepository;
 
@@ -51,6 +62,22 @@ export class SupabaseRepository {
      */
     public async logSession(session: DatabaseSession): Promise<boolean> {
         console.log(`[SupabaseRepository] Log matchmaking session: ${session.id}`);
+        return true;
+    }
+
+    /**
+     * Persist an invite link record.
+     */
+    public async saveInviteLink(invite: DatabaseInviteLink): Promise<boolean> {
+        console.log(`[SupabaseRepository] Save invite link: ${invite.inviteCode} for frame ${invite.frameId}`);
+        return true;
+    }
+
+    /**
+     * Validate whether an invite code is active for a frame.
+     */
+    public async validateInviteLink(frameId: string, inviteCode: string): Promise<boolean> {
+        console.log(`[SupabaseRepository] Validate invite code ${inviteCode} for frame ${frameId}`);
         return true;
     }
 

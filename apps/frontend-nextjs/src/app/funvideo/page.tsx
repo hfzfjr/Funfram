@@ -10,6 +10,7 @@ import GameScene from '@/components/frame/GameScene';
 import GameInviteNotification from '@/components/ui/overlay/GameInviteNotification';
 import { useCallStore } from '@/store/useCallStore';
 import { WebSocketService } from '@/services/websocket.service';
+import { WebRtcService } from '@/services/webrtc.service';
 import { ApiService } from '@/services/api.service';
 import { Participant } from '@/types/participant';
 import { CanvasEvent } from '@/types/game';
@@ -25,6 +26,7 @@ function FunVideoContent() {
     const audioTrackRef = useRef<MediaStreamTrack | null>(null);
     const localStreamRef = useRef<MediaStream | null>(null);
     const cameraRequestRef = useRef<Promise<MediaStream | null> | null>(null);
+    const autoStartHandledRef = useRef(false);
 
     const fsmState = useCallStore((state) => state.fsmState);
     const localUser = useCallStore((state) => state.localUser);
@@ -165,6 +167,7 @@ function FunVideoContent() {
             };
             store.setLocalUser(local);
             store.setFsmState('FRAME');
+            store.setFrameOwnerId(payload.ownerId);
             // Persist frameId in store
             useCallStore.setState({ frameId: payload.frameId, inviteToken: null });
             // Bootstrap the left participant list with ourselves
@@ -210,6 +213,7 @@ function FunVideoContent() {
             };
             store.setLocalUser(local);
             store.setFsmState('FRAME');
+            store.setFrameOwnerId(payload.ownerId);
             useCallStore.setState({ frameId: payload.frameId, inviteToken: null });
             if (store.leftParticipants.length === 0) {
                 useCallStore.setState({ leftParticipants: [local] });
@@ -259,15 +263,70 @@ function FunVideoContent() {
             const store = useCallStore.getState();
             store.setSession(payload);
             useCallStore.setState({ generalChat: [] });
+        // Initialize WebRTC when match is found
+        const webrtc = WebRtcService.getInstance();
+        const webrtcUrl = process.env.NEXT_PUBLIC_WS_WEBRTC_URL || 'ws://localhost:5002';
+        webrtc.setLocalStream(localStreamRef.current);
+        webrtc.onRemoteStream((participantId, stream) => {
+            const store = useCallStore.getState();
+            // Update existing participant in rightParticipants instead of adding new one
+            const existingParticipant = store.rightParticipants.find(p => p.id === participantId);
+            if (existingParticipant) {
+                // Update stream for existing participant
+                useCallStore.setState({
+                    rightParticipants: store.rightParticipants.map(p =>
+                        p.id === participantId ? { ...p, stream } : p
+                    )
+                });
+            } else {
+                // Fallback: add participant if not found (should not happen normally)
+                console.warn('[WebRTC] Participant not found in rightParticipants, adding:', participantId);
+                store.addParticipant('right', {
+                    id: participantId,
+                    stream: stream,
+                    name: 'Remote User',
+                    isMuted: false,
+                    isCameraOff: false,
+                    isOwner: false,
+                    presence: 'ONLINE',
+                    joinOrder: 1,
+                });
+            }
+        });
+        webrtc.connectToSignalingServer(webrtcUrl).then(() => {
+            webrtc.joinRoom(payload.sessionId);
+        }).catch(err => {
+            console.error('WebRTC connection failed:', err);
+        });
+
         };
 
         // ── MATCH_LEFT: opponent frame left ──────────────────────────────────
         const onMatchLeft = () => {
-            useCallStore.getState().setSession(null);
-            useCallStore.setState({ generalChat: [] });
+            useCallStore.getState().handleOpponentLeft({});
         };
 
         // ── GAME_INVITE_RECEIVED ──────────────────────────────────────────────
+        const onPlayerLeft = (payload: any) => {
+            useCallStore.getState().handleOpponentLeft(payload);
+        };
+
+        const onDeviceStateChange = (payload: any) => {
+            const store = useCallStore.getState();
+            if (!payload?.userId) return;
+            store.setDeviceState(
+                payload.userId,
+                payload.cameraEnabled ?? true,
+                payload.microphoneEnabled ?? true,
+            );
+        };
+
+        const onMuteUpdate = (payload: any) => {
+            const store = useCallStore.getState();
+            if (!payload?.userId) return;
+            store.muteParticipant(payload.userId, Boolean(payload.isMuted));
+        };
+
         const onGameInviteReceived = (payload: any) => {
             useCallStore.getState().receiveGameInvite(payload);
         };
@@ -338,6 +397,9 @@ function FunVideoContent() {
         ws.on('PLAYER_JOIN', onPlayerJoin);
         ws.on('MATCH_FOUND', onMatchFound);
         ws.on('MATCH_LEFT', onMatchLeft);
+        ws.on('PLAYER_LEFT', onPlayerLeft);
+        ws.on('DEVICE_STATE_CHANGE', onDeviceStateChange);
+        ws.on('MUTE_UPDATE', onMuteUpdate);
         ws.on('GAME_INVITE_RECEIVED', onGameInviteReceived);
         ws.on('GAME_START', onGameStart);
         ws.on('DRAW_START', onDrawStart);
@@ -356,6 +418,9 @@ function FunVideoContent() {
             ws.off('PLAYER_JOIN', onPlayerJoin);
             ws.off('MATCH_FOUND', onMatchFound);
             ws.off('MATCH_LEFT', onMatchLeft);
+            ws.off('PLAYER_LEFT', onPlayerLeft);
+            ws.off('DEVICE_STATE_CHANGE', onDeviceStateChange);
+            ws.off('MUTE_UPDATE', onMuteUpdate);
             ws.off('GAME_INVITE_RECEIVED', onGameInviteReceived);
             ws.off('GAME_START', onGameStart);
             ws.off('DRAW_START', onDrawStart);
@@ -367,6 +432,7 @@ function FunVideoContent() {
             ws.off('CANVAS_START', onCanvasEvent);
             ws.off('CANVAS_MOVE', onCanvasEvent);
             ws.off('CANVAS_END', onCanvasEvent);
+            WebRtcService.getInstance().disconnectAll();
             stopLocalMedia();
             ws.disconnect();
         };
@@ -400,9 +466,25 @@ function FunVideoContent() {
         }
     }, [isCamOn, isMicOn]); // Re-run when camera/mic state changes
 
+    useEffect(() => {
+        if (isAuthenticated || autoStartHandledRef.current) {
+            return;
+        }
+
+        const savedUsername = localStorage.getItem('funfram_username');
+        const shouldAutoStart = sessionStorage.getItem('funfram_autostart') === '1';
+        if (savedUsername && shouldAutoStart) {
+            autoStartHandledRef.current = true;
+            sessionStorage.removeItem('funfram_autostart');
+            void handleAuthConfirm(savedUsername);
+        }
+    }, [isAuthenticated]);
+
     // ── Auth confirm handler ─────────────────────────────────────────────────
     const handleAuthConfirm = async (confirmedUsername: string) => {
         setIsAuthenticated(true);
+        localStorage.setItem('funfram_username', confirmedUsername);
+        sessionStorage.removeItem('funfram_autostart');
 
         // Store username early so FRAME_CREATED handler can read it
         useCallStore.setState({
@@ -448,18 +530,46 @@ function FunVideoContent() {
     };
 
     const handleLeave = () => {
-        useCallStore.getState().leaveFrame();
-        stopLocalMedia();
-        reset();
-        setIsAuthenticated(false);
-        sessionStorage.removeItem('funfram_session');
+        const store = useCallStore.getState();
+        WebRtcService.getInstance().disconnectAll();
+        if (store.frameId) {
+            WebSocketService.getInstance().sendEvent('FRAME_LEAVE', {
+                frameId: store.frameId,
+                sessionId: store.sessionId,
+                userId: store.localUser?.id,
+            });
+        }
+        // Return to lobby (FRAME state) instead of HOME
+        useCallStore.setState({
+            sessionId: null,
+            rightParticipants: [],
+            fsmState: 'FRAME',
+            matchmakingState: 'Waiting',
+            gameState: null,
+            gameInvite: null,
+            generalChat: [],
+        });
+        // Don't stop media - keep camera active in lobby
+        // Don't reset - keep frameId and leftParticipants
+        sessionStorage.removeItem('funfram_autostart');
     };
 
     const handleMic = () => {
         if (audioTrackRef.current) {
-            audioTrackRef.current.enabled = !isMicOn;
-            setIsMicOn((v) => !v);
-            useCallStore.getState().muteParticipant(localUser?.id ?? '', isMicOn);
+            const nextMicEnabled = !isMicOn;
+            audioTrackRef.current.enabled = nextMicEnabled;
+            setIsMicOn(nextMicEnabled);
+
+            const store = useCallStore.getState();
+            if (store.localUser?.id) {
+                store.muteParticipant(store.localUser.id, !nextMicEnabled);
+                WebSocketService.getInstance().sendEvent('DEVICE_STATE_CHANGE', {
+                    sessionId: store.sessionId,
+                    userId: store.localUser.id,
+                    cameraEnabled: !store.localUser.isCameraOff,
+                    microphoneEnabled: nextMicEnabled,
+                });
+            }
         }
     };
 
@@ -470,9 +580,20 @@ function FunVideoContent() {
         }
 
         if (videoTrackRef.current) {
-            videoTrackRef.current.enabled = !isCamOn;
-            setIsCamOn((v) => !v);
-            useCallStore.getState().toggleCamera(localUser?.id ?? '', isCamOn);
+            const nextCamEnabled = !isCamOn;
+            videoTrackRef.current.enabled = nextCamEnabled;
+            setIsCamOn(nextCamEnabled);
+
+            const store = useCallStore.getState();
+            if (store.localUser?.id) {
+                store.toggleCamera(store.localUser.id, !nextCamEnabled);
+                WebSocketService.getInstance().sendEvent('DEVICE_STATE_CHANGE', {
+                    sessionId: store.sessionId,
+                    userId: store.localUser.id,
+                    cameraEnabled: nextCamEnabled,
+                    microphoneEnabled: !store.localUser.isMuted,
+                });
+            }
         }
     };
 
@@ -514,3 +635,4 @@ export default function FunVideoPage() {
         </Suspense>
     );
 }
+

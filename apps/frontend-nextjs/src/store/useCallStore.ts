@@ -23,6 +23,11 @@ export interface Session {
     events: string[];
 }
 
+export interface DeviceState {
+    camera: boolean;
+    mic: boolean;
+}
+
 export interface ChatMessage {
     id: string;
     senderId: string;
@@ -49,6 +54,8 @@ export interface CallStore {
     frameId: string | null;
     inviteToken: string | null;
     sessionId: string | null;
+    frameOwnerId: string | null;
+    deviceState: Record<string, DeviceState>;
 
     // Participants
     leftParticipants: Participant[]; // Local Frame (Frame A)
@@ -68,6 +75,7 @@ export interface CallStore {
     setFsmState: (state: AppFsmState) => void;
     setMatchmakingState: (state: MatchmakingState) => void;
     setLocalUser: (user: Participant | null) => void;
+    setFrameOwnerId: (ownerId: string | null) => void;
 
     // Frame actions
     createFrame: (username: string) => void;
@@ -79,6 +87,7 @@ export interface CallStore {
 
     // Matchmaking / Session actions
     setSession: (session: Session | null) => void;
+    handleOpponentLeft: (payload: { userId?: string; frameId?: string; sessionId?: string; reason?: string }) => void;
     triggerNextFrame: () => boolean; // returns true if action allowed (rate limited)
 
     // Chat Actions
@@ -98,6 +107,7 @@ export interface CallStore {
     // Participant Controls (Moderation / UI status)
     muteParticipant: (id: string, isMuted: boolean) => void;
     toggleCamera: (id: string, isCameraOff: boolean) => void;
+    setDeviceState: (userId: string, cameraEnabled: boolean, microphoneEnabled: boolean) => void;
     reportUser: (targetUserId: string, reason: string) => void;
 
     // Reconnection / Session recovery
@@ -122,6 +132,18 @@ const initialGameState = (): GuessDrawingState => ({
     status: 'Waiting',
 });
 
+const sortParticipants = (participants: Participant[]) => {
+    return [...participants].sort((a, b) => {
+        if (a.isOwner !== b.isOwner) {
+            return a.isOwner ? -1 : 1;
+        }
+        if (a.joinOrder !== b.joinOrder) {
+            return a.joinOrder - b.joinOrder;
+        }
+        return a.name.localeCompare(b.name);
+    });
+};
+
 export const useCallStore = create<CallStore>((set, get) => ({
     fsmState: 'HOME',
     matchmakingState: 'Waiting',
@@ -129,6 +151,8 @@ export const useCallStore = create<CallStore>((set, get) => ({
     frameId: null,
     inviteToken: null,
     sessionId: null,
+    frameOwnerId: null,
+    deviceState: {},
     leftParticipants: [],
     rightParticipants: [],
     generalChat: [],
@@ -139,6 +163,7 @@ export const useCallStore = create<CallStore>((set, get) => ({
     setFsmState: (fsmState) => set({ fsmState }),
     setMatchmakingState: (matchmakingState) => set({ matchmakingState }),
     setLocalUser: (localUser) => set({ localUser }),
+    setFrameOwnerId: (frameOwnerId) => set({ frameOwnerId }),
 
     createFrame: (username) => {
         // Send create frame request to backend via WebSocket
@@ -153,19 +178,6 @@ export const useCallStore = create<CallStore>((set, get) => ({
     },
 
     leaveFrame: () => {
-        const { leftParticipants, localUser } = get();
-
-        // If local user is leaving
-        if (localUser) {
-            // Ownership Transfer Algorithm (Join order)
-            const remainingMembers = leftParticipants.filter(p => p.id !== localUser.id);
-            if (remainingMembers.length > 0) {
-                // Transfer owner to the next participant in array order
-                remainingMembers[0].isOwner = true;
-                remainingMembers[0].presence = 'ONLINE';
-            }
-        }
-
         sessionStorage.removeItem('funfram_session');
         get().reset();
     },
@@ -175,26 +187,18 @@ export const useCallStore = create<CallStore>((set, get) => ({
         if (list.some(p => p.id === participant.id)) return {};
         if (list.length >= 4) return {};
 
-        const updatedList = [...list, participant].sort((a, b) => a.joinOrder - b.joinOrder);
-
-        // Recalculate ownership for local frame
-        if (side === 'left' && updatedList.length > 0) {
-            updatedList.forEach((p, idx) => {
-                p.isOwner = idx === 0;
-            });
-            // Update localUser state if local user was impacted
-            const currentLocalUser = state.localUser;
-            if (currentLocalUser) {
-                const matching = updatedList.find(p => p.id === currentLocalUser.id);
-                if (matching) {
-                    state.localUser = matching;
-                }
-            }
-        }
+        const updatedList = sortParticipants([...list, participant]);
 
         return {
             [side === 'left' ? 'leftParticipants' : 'rightParticipants']: updatedList,
-            localUser: state.localUser,
+            localUser: state.localUser?.id === participant.id ? participant : state.localUser,
+            deviceState: {
+                ...state.deviceState,
+                [participant.id]: {
+                    camera: !participant.isCameraOff,
+                    mic: !participant.isMuted,
+                },
+            },
         };
     }),
 
@@ -202,23 +206,12 @@ export const useCallStore = create<CallStore>((set, get) => ({
         const list = side === 'left' ? state.leftParticipants : state.rightParticipants;
         const updatedList = list.filter(p => p.id !== id);
 
-        // Recalculate ownership if left frame
-        if (side === 'left' && updatedList.length > 0) {
-            updatedList.forEach((p, idx) => {
-                p.isOwner = idx === 0;
-            });
-            const currentLocalUser = state.localUser;
-            if (currentLocalUser) {
-                const matching = updatedList.find(p => p.id === currentLocalUser.id);
-                if (matching) {
-                    state.localUser = matching;
-                }
-            }
-        }
-
         return {
             [side === 'left' ? 'leftParticipants' : 'rightParticipants']: updatedList,
-            localUser: state.localUser,
+            localUser: state.localUser?.id === id ? null : state.localUser,
+            deviceState: Object.fromEntries(
+                Object.entries(state.deviceState).filter(([participantId]) => participantId !== id)
+            ),
         };
     }),
 
@@ -236,14 +229,15 @@ export const useCallStore = create<CallStore>((set, get) => ({
                 matchmakingState: 'Waiting',
                 gameState: null,
                 gameInvite: null,
+                frameOwnerId: null,
             });
             return;
         }
 
         // Preserve local user's stream when setting session
         const state = get();
-        const localUserId = state.localUser?.id;
-        const localStream = state.localUser?.stream;
+            const localUserId = state.localUser?.id;
+            const localStream = state.localUser?.stream;
 
         // Update leftParticipants with preserved stream for local user
         const updatedLeftParticipants = session.frameA.members.map(p => {
@@ -252,6 +246,7 @@ export const useCallStore = create<CallStore>((set, get) => ({
             }
             return p;
         });
+        const updatedRightParticipants = sortParticipants(session.frameB.members);
 
         // Update localUser if it's in the new leftParticipants
         const updatedLocalUser = updatedLeftParticipants.find(p => p.id === localUserId) || state.localUser;
@@ -259,11 +254,38 @@ export const useCallStore = create<CallStore>((set, get) => ({
         // Set state to MATCHED
         set({
             sessionId: session.sessionId,
-            leftParticipants: updatedLeftParticipants,
-            rightParticipants: session.frameB.members,
+            frameOwnerId: session.frameA.ownerId,
+            leftParticipants: sortParticipants(updatedLeftParticipants),
+            rightParticipants: updatedRightParticipants,
             fsmState: 'MATCHED',
             matchmakingState: 'ActiveMeeting',
             localUser: updatedLocalUser,
+        });
+    },
+
+    handleOpponentLeft: (payload) => {
+        set((state) => {
+            const leavingId = payload.userId;
+            const shouldRemoveLocal = leavingId ? state.localUser?.id !== leavingId : true;
+            const nextLeft = leavingId && shouldRemoveLocal
+                ? state.leftParticipants.filter(p => p.id !== leavingId)
+                : state.leftParticipants;
+
+            return {
+                sessionId: null,
+                leftParticipants: sortParticipants(nextLeft),
+                rightParticipants: [],
+                fsmState: state.frameId ? 'SEARCHING' : 'HOME',
+                matchmakingState: 'Searching',
+                gameState: null,
+                gameInvite: null,
+                generalChat: [],
+                deviceState: leavingId
+                    ? Object.fromEntries(
+                        Object.entries(state.deviceState).filter(([participantId]) => participantId !== leavingId)
+                    )
+                    : state.deviceState,
+            };
         });
     },
 
@@ -400,6 +422,13 @@ export const useCallStore = create<CallStore>((set, get) => ({
             leftParticipants: left,
             rightParticipants: right,
             localUser: local,
+            deviceState: {
+                ...state.deviceState,
+                [id]: {
+                    camera: state.deviceState[id]?.camera ?? true,
+                    mic: !isMuted,
+                },
+            },
         };
     }),
 
@@ -417,6 +446,46 @@ export const useCallStore = create<CallStore>((set, get) => ({
             leftParticipants: left,
             rightParticipants: right,
             localUser: local,
+            deviceState: {
+                ...state.deviceState,
+                [id]: {
+                    camera: !isCameraOff,
+                    mic: state.deviceState[id]?.mic ?? true,
+                },
+            },
+        };
+    }),
+
+    setDeviceState: (userId, cameraEnabled, microphoneEnabled) => set((state) => {
+        const mapFunc = (p: Participant) => p.id === userId ? {
+            ...p,
+            isCameraOff: !cameraEnabled,
+            isMuted: !microphoneEnabled,
+        } : p;
+
+        const left = sortParticipants(state.leftParticipants.map(mapFunc));
+        const right = sortParticipants(state.rightParticipants.map(mapFunc));
+
+        let local = state.localUser;
+        if (local && local.id === userId) {
+            local = {
+                ...local,
+                isCameraOff: !cameraEnabled,
+                isMuted: !microphoneEnabled,
+            };
+        }
+
+        return {
+            leftParticipants: left,
+            rightParticipants: right,
+            localUser: local,
+            deviceState: {
+                ...state.deviceState,
+                [userId]: {
+                    camera: cameraEnabled,
+                    mic: microphoneEnabled,
+                },
+            },
         };
     }),
 
@@ -444,6 +513,7 @@ export const useCallStore = create<CallStore>((set, get) => ({
             localUser: local,
             frameId: savedState.frameId,
             inviteToken: savedState.inviteToken || null,
+            frameOwnerId: savedState.ownerId || savedState.userId || null,
         });
     },
 
@@ -463,6 +533,8 @@ export const useCallStore = create<CallStore>((set, get) => ({
         frameId: null,
         inviteToken: null,
         sessionId: null,
+        frameOwnerId: null,
+        deviceState: {},
         leftParticipants: [],
         rightParticipants: [],
         generalChat: [],
