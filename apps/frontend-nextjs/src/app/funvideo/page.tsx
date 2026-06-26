@@ -79,16 +79,32 @@ function FunVideoContent() {
             try {
                 stopLocalMedia();
 
+                console.log('🎥 Requesting camera/mic...');
                 const stream = await requestUserMedia();
+                console.log('✅ Camera/mic stream obtained:', stream);
                 localStreamRef.current = stream;
                 setLocalStreamInStore(stream);
                 videoTrackRef.current = stream.getVideoTracks()[0] ?? null;
                 audioTrackRef.current = stream.getAudioTracks()[0] ?? null;
                 setIsCamOn(Boolean(videoTrackRef.current));
                 setIsMicOn(Boolean(audioTrackRef.current));
+                console.log('📹 Video track:', videoTrackRef.current);
+                console.log('🎤 Audio track:', audioTrackRef.current);
+
+                // Update local user stream in store after camera is ready
+                const store = useCallStore.getState();
+                console.log('👤 Local user before update:', store.localUser);
+                if (store.localUser) {
+                    store.setLocalUser({
+                        ...store.localUser,
+                        stream: stream,
+                    });
+                    console.log('✅ Local user stream updated');
+                }
+
                 return stream;
             } catch (error) {
-                console.warn('Camera not available:', error);
+                console.error('❌ Camera not available:', error);
                 setIsCamOn(false);
                 setIsMicOn(false);
                 setLocalStreamInStore(null);
@@ -106,6 +122,33 @@ function FunVideoContent() {
         const ws = WebSocketService.getInstance();
         sessionStorage.removeItem('funfram_session');
         useCallStore.getState().reset();
+
+        // Sync stream to local user participant when stream changes
+        const syncStreamToParticipant = () => {
+            const store = useCallStore.getState();
+            if (localStreamRef.current && store.localUser) {
+                store.setLocalUser({
+                    ...store.localUser,
+                    stream: localStreamRef.current,
+                });
+                // Also update in leftParticipants array
+                if (store.leftParticipants.length > 0) {
+                    useCallStore.setState({
+                        leftParticipants: store.leftParticipants.map(p =>
+                            p.id === store.localUser?.id ? { ...p, stream: localStreamRef.current } : p
+                        )
+                    });
+                }
+            }
+        };
+
+        // Watch for stream changes
+        const streamInterval = setInterval(() => {
+            if (localStreamRef.current) {
+                syncStreamToParticipant();
+                clearInterval(streamInterval);
+            }
+        }, 100);
 
         // ── FRAME_CREATED: server confirms lobby was created ──────────────────
         const onFrameCreated = (payload: any) => {
@@ -135,6 +178,21 @@ function FunVideoContent() {
                 frameId: payload.frameId,
                 isOwner: true,
             }));
+
+            // If stream is ready now, update participant
+            if (localStreamRef.current) {
+                store.setLocalUser({
+                    ...local,
+                    stream: localStreamRef.current,
+                });
+                if (store.leftParticipants.length > 0) {
+                    useCallStore.setState({
+                        leftParticipants: store.leftParticipants.map(p =>
+                            p.id === local.id ? { ...p, stream: localStreamRef.current } : p
+                        )
+                    });
+                }
+            }
         };
 
         // ── FRAME_JOINED: server confirms someone joined ──────────────────────
@@ -162,6 +220,21 @@ function FunVideoContent() {
                 frameId: payload.frameId,
                 isOwner: false,
             }));
+
+            // If stream is ready now, update participant
+            if (localStreamRef.current) {
+                store.setLocalUser({
+                    ...local,
+                    stream: localStreamRef.current,
+                });
+                if (store.leftParticipants.length > 0) {
+                    useCallStore.setState({
+                        leftParticipants: store.leftParticipants.map(p =>
+                            p.id === local.id ? { ...p, stream: localStreamRef.current } : p
+                        )
+                    });
+                }
+            }
         };
 
         // ── PLAYER_JOIN: a peer joined our lobby ─────────────────────────────
@@ -300,6 +373,33 @@ function FunVideoContent() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // Effect to sync stream to participant whenever stream changes
+    useEffect(() => {
+        console.log('🔄 Stream sync effect triggered, isCamOn:', isCamOn, 'isMicOn:', isMicOn);
+        if (localStreamRef.current) {
+            const store = useCallStore.getState();
+            console.log('👤 Syncing stream to local user:', store.localUser?.id);
+            if (store.localUser) {
+                store.setLocalUser({
+                    ...store.localUser,
+                    stream: localStreamRef.current,
+                });
+                console.log('✅ Local user stream synced');
+                // Update in leftParticipants array
+                if (store.leftParticipants.length > 0) {
+                    useCallStore.setState({
+                        leftParticipants: store.leftParticipants.map(p =>
+                            p.id === store.localUser?.id ? { ...p, stream: localStreamRef.current } : p
+                        )
+                    });
+                    console.log('✅ LeftParticipants array updated');
+                }
+            }
+        } else {
+            console.log('⚠️ No stream to sync');
+        }
+    }, [isCamOn, isMicOn]); // Re-run when camera/mic state changes
+
     // ── Auth confirm handler ─────────────────────────────────────────────────
     const handleAuthConfirm = async (confirmedUsername: string) => {
         setIsAuthenticated(true);
@@ -318,12 +418,12 @@ function FunVideoContent() {
             },
         });
 
-        // Start camera right after auth (user gesture satisfies browser policy)
-        await startCamera();
-
         const ws = WebSocketService.getInstance();
         const wsUrl = process.env.NEXT_PUBLIC_WS_GAME_URL || 'ws://localhost:5001/socket';
         ws.connect(wsUrl);
+
+        // Start camera right after auth (user gesture satisfies browser policy)
+        await startCamera();
 
         const invite = searchParams.get('invite');
         const frameId = searchParams.get('frameId');
