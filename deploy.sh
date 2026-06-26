@@ -64,7 +64,7 @@ docker compose ps
 echo "✅ Deployment completed successfully!"
 echo ""
 echo "🌐 Frontend: http://localhost:3001"
-echo "🔌 WebSocket Game: ws://localhost:5001/socket"
+echo "🔌 WebSocket Game: ws://localhost:5001"
 echo "🔌 WebRTC Signaling: ws://localhost:5002"
 echo ""
 echo "To view logs: docker compose logs -f"
