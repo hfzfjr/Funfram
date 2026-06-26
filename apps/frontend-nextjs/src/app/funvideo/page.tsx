@@ -269,16 +269,29 @@ function FunVideoContent() {
         webrtc.setLocalStream(localStreamRef.current);
         webrtc.onRemoteStream((participantId, stream) => {
             const store = useCallStore.getState();
-            store.addParticipant('right', {
-                id: participantId,
-                stream: stream,
-                name: 'Remote User',
-                isMuted: false,
-                isCameraOff: false,
-                isOwner: false,
-                presence: 'ONLINE',
-                joinOrder: 1,
-            });
+            // Update existing participant in rightParticipants instead of adding new one
+            const existingParticipant = store.rightParticipants.find(p => p.id === participantId);
+            if (existingParticipant) {
+                // Update stream for existing participant
+                useCallStore.setState({
+                    rightParticipants: store.rightParticipants.map(p =>
+                        p.id === participantId ? { ...p, stream } : p
+                    )
+                });
+            } else {
+                // Fallback: add participant if not found (should not happen normally)
+                console.warn('[WebRTC] Participant not found in rightParticipants, adding:', participantId);
+                store.addParticipant('right', {
+                    id: participantId,
+                    stream: stream,
+                    name: 'Remote User',
+                    isMuted: false,
+                    isCameraOff: false,
+                    isOwner: false,
+                    presence: 'ONLINE',
+                    joinOrder: 1,
+                });
+            }
         });
         webrtc.connectToSignalingServer(webrtcUrl).then(() => {
             webrtc.joinRoom(payload.sessionId);
@@ -526,10 +539,18 @@ function FunVideoContent() {
                 userId: store.localUser?.id,
             });
         }
-        useCallStore.getState().leaveFrame();
-        stopLocalMedia();
-        reset();
-        sessionStorage.removeItem('funfram_session');
+        // Return to lobby (FRAME state) instead of HOME
+        useCallStore.setState({
+            sessionId: null,
+            rightParticipants: [],
+            fsmState: 'FRAME',
+            matchmakingState: 'Waiting',
+            gameState: null,
+            gameInvite: null,
+            generalChat: [],
+        });
+        // Don't stop media - keep camera active in lobby
+        // Don't reset - keep frameId and leftParticipants
         sessionStorage.removeItem('funfram_autostart');
     };
 
