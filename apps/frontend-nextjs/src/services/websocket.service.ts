@@ -20,7 +20,7 @@ class WebSocketServiceClass {
     // Resolve endpoint from env; fallback to default.
     this.url = typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_WS_GAME_URL
       ? process.env.NEXT_PUBLIC_WS_GAME_URL
-      : 'ws://localhost:5001/socket';
+      : 'ws://localhost:5001';
   }
 
   static getInstance(): WebSocketServiceClass {

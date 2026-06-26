@@ -419,7 +419,7 @@ function FunVideoContent() {
         });
 
         const ws = WebSocketService.getInstance();
-        const wsUrl = process.env.NEXT_PUBLIC_WS_GAME_URL || 'ws://localhost:5001/socket';
+        const wsUrl = process.env.NEXT_PUBLIC_WS_GAME_URL || 'ws://localhost:5001';
         ws.connect(wsUrl);
 
         // Start camera right after auth (user gesture satisfies browser policy)

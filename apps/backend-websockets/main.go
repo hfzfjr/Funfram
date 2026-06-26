@@ -47,6 +47,21 @@ func main() {
 
 	})
 
+	// Also handle root path for Cloudflare tunnel compatibility
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Redirect root to /socket or handle directly
+		if r.URL.Path == "/" {
+			ws, err := upgrader.Upgrade(w, r, nil)
+			if err != nil {
+				log.Println("Upgrade error on root:", err)
+				return
+			}
+			handleConnections(hub, ws)
+		} else {
+			http.NotFound(w, r)
+		}
+	})
+
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 
 }
