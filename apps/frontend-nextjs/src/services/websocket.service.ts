@@ -18,8 +18,8 @@ class WebSocketServiceClass {
 
   private constructor() {
     // Resolve endpoint from env; fallback to default.
-    this.url = typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_WS_URL
-      ? process.env.NEXT_PUBLIC_WS_URL
+    this.url = typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_WS_GAME_URL
+      ? process.env.NEXT_PUBLIC_WS_GAME_URL
       : 'ws://localhost:5001/socket';
   }
 
@@ -60,10 +60,10 @@ class WebSocketServiceClass {
 
     this.ws.onerror = (err) => {
       // Extract useful info from the Event object
-      const e:any = err as any;
+      const e: any = err as any;
       const type = e.type || 'unknown';
       const url = e?.target?.url || 'unknown';
-      console.error('WebSocket error →', {type, url}, err);
+      console.error('WebSocket error →', { type, url }, err);
       // Do NOT reconnect here – onclose will handle reconnection.
     };
 

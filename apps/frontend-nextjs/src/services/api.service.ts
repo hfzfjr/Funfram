@@ -15,7 +15,7 @@ export interface VerifyInviteResponse {
 export class ApiService {
     private static instance: ApiService;
 
-    private constructor() {}
+    private constructor() { }
 
     public static getInstance(): ApiService {
         if (!ApiService.instance) {
@@ -52,8 +52,8 @@ export class ApiService {
         const nonce = Math.random().toString(36).substring(2, 9);
         const params: InviteParams = { frameId, sessionId: sessionId || 'no-session', expire, nonce };
         const signature = await generateSimulatedSignature(params);
-        
-        const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+
+        const origin = typeof window !== 'undefined' ? window.location.origin : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
         return `${origin}/funvideo?invite=${signature}&frameId=${frameId}&sessionId=${sessionId || 'no-session'}&expire=${expire}&nonce=${nonce}`;
     }
 
@@ -61,14 +61,14 @@ export class ApiService {
      * Checks if an invite link query is valid.
      */
     public async verifyInviteLink(
-        frameId: string, 
-        sessionId: string, 
-        expireStr: string, 
-        nonce: string, 
+        frameId: string,
+        sessionId: string,
+        expireStr: string,
+        nonce: string,
         signature: string
     ): Promise<VerifyInviteResponse> {
         const expire = parseInt(expireStr, 10);
-        
+
         // Simulating GET /api/v1/invites/verify
         const now = Date.now();
         if (now > expire) {

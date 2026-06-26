@@ -297,7 +297,7 @@ function FunVideoContent() {
             stopLocalMedia();
             ws.disconnect();
         };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // ── Auth confirm handler ─────────────────────────────────────────────────
@@ -322,7 +322,8 @@ function FunVideoContent() {
         await startCamera();
 
         const ws = WebSocketService.getInstance();
-        ws.connect('ws://localhost:5001/socket');
+        const wsUrl = process.env.NEXT_PUBLIC_WS_GAME_URL || 'ws://localhost:5001/socket';
+        ws.connect(wsUrl);
 
         const invite = searchParams.get('invite');
         const frameId = searchParams.get('frameId');
