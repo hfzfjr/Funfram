@@ -1,36 +1,43 @@
+/*
+  Navbar — 88px, fixed, #181920 bg.
+  Three sections: left (logo + live), center (nav tabs), right (invite button).
+*/
 .navbar {
     width: 100%;
-    height: 80px;
-    background-color: #191b21;
-    border-bottom: 1px solid #2a2a2a;
+    height: 88px;
+    background-color: #181920;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 28px;
+    padding: 0 32px;
     position: fixed;
     top: 0;
     left: 0;
     z-index: 1000;
+    box-sizing: border-box;
 }
 
+/* ── Left ──────────────────────────────────── */
 .navbar-left {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 16px;
 }
 
 .navbar-logo {
-    height: 50px;
+    height: 48px;
     width: auto;
+    max-width: 150px;
+    object-fit: contain;
 }
 
 .navbar-live {
     background-color: #242527;
-    padding: 4px 12px;
+    padding: 5px 14px;
     border-radius: 999px;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 7px;
 }
 
 .live-dot {
@@ -42,28 +49,24 @@
 }
 
 @keyframes pulse {
-
-    0%,
-    100% {
-        opacity: 1;
-    }
-
-    50% {
-        opacity: 0.5;
-    }
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
 }
 
 .live-text {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 500;
-    color: #c2c6d6;
+    color: #b0b8d0;
 }
 
+/* ── Center ────────────────────────────────── */
 .navbar-center {
-    margin-left: -80px;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
     align-items: center;
-    gap: 32px;
+    gap: 48px;
 }
 
 .nav-link {
@@ -71,7 +74,7 @@
     font-weight: 500;
     color: #dfe2f1;
     text-decoration: none;
-    transition: color 0.2s;
+    transition: color 0.18s;
 }
 
 .nav-link:hover {
@@ -80,5 +83,5 @@
 
 .nav-link.active {
     color: #08a7fd;
-    font-weight: 600;
+    font-weight: 700;
 }

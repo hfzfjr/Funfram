@@ -40,7 +40,11 @@ func CloseDatabase() {
 }
 
 // User operations
-func CreateUser(username string) (string, error) {
+// GetOrCreateUser performs an idempotent upsert:
+// if the username already exists it returns the existing UUID,
+// otherwise it inserts a new row and returns the generated UUID.
+// The returned ID is ALWAYS a proper DB UUID, never a connection-string.
+func GetOrCreateUser(username string) (string, error) {
 	if db == nil {
 		return "", fmt.Errorf("database not initialized")
 	}
@@ -48,16 +52,24 @@ func CreateUser(username string) (string, error) {
 	ctx := context.Background()
 	var userID string
 
+	// Upsert: on conflict (username) do nothing, then select the id.
 	err := db.QueryRow(ctx,
-		"INSERT INTO users (username) VALUES ($1) RETURNING id",
+		`INSERT INTO users (username) VALUES ($1)
+		 ON CONFLICT (username) DO UPDATE SET username = EXCLUDED.username
+		 RETURNING id`,
 		username,
 	).Scan(&userID)
 
 	if err != nil {
-		return "", fmt.Errorf("failed to create user: %w", err)
+		return "", fmt.Errorf("failed to get or create user: %w", err)
 	}
 
 	return userID, nil
+}
+
+// CreateUser kept as an alias for legacy call sites.
+func CreateUser(username string) (string, error) {
+	return GetOrCreateUser(username)
 }
 
 func GetUserByUsername(username string) (map[string]interface{}, error) {

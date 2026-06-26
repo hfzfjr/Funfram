@@ -1,116 +1,101 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { useCallStore } from '@/store/useCallStore';
+import { WebSocketService } from '@/services/websocket.service';
 import './SidebarChat.css';
-
-interface Contact {
-    id: string;
-    name: string;
-    avatar: string;
-    lastMessage: string;
-    timestamp: string;
-    unread: number;
-    online: boolean;
-}
 
 interface SidebarChatProps {
     onClose?: () => void;
-    onSelectContact?: (contact: Contact) => void;
 }
 
-export default function SidebarChat({ onClose, onSelectContact }: SidebarChatProps) {
-    const [contacts] = useState<Contact[]>([
-        {
-            id: '1',
-            name: 'Sarah Johnson',
-            avatar: '/avatar1.png',
-            lastMessage: 'Hey! How are you doing?',
-            timestamp: '2m ago',
-            unread: 2,
-            online: true,
-        },
-        {
-            id: '2',
-            name: 'Mike Chen',
-            avatar: '/avatar2.png',
-            lastMessage: 'Let\'s video chat later',
-            timestamp: '15m ago',
-            unread: 0,
-            online: true,
-        },
-        {
-            id: '3',
-            name: 'Emma Wilson',
-            avatar: '/avatar3.png',
-            lastMessage: 'Thanks for the help!',
-            timestamp: '1h ago',
-            unread: 0,
-            online: false,
-        },
-        {
-            id: '4',
-            name: 'David Brown',
-            avatar: '/avatar4.png',
-            lastMessage: 'See you tomorrow!',
-            timestamp: '3h ago',
-            unread: 1,
-            online: false,
-        },
-    ]);
+export default function SidebarChat({ onClose }: SidebarChatProps) {
+    const [text, setText] = useState('');
+    const messages = useCallStore((state) => state.generalChat);
+    const localUser = useCallStore((state) => state.localUser);
+    const leftParticipants = useCallStore((state) => state.leftParticipants);
+    const ws = WebSocketService.getInstance();
+    const chatEndRef = useRef<HTMLDivElement>(null);
 
-    const [selectedContact, setSelectedContact] = useState<string | null>(null);
+    // Auto-scroll to bottom
+    useEffect(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages]);
 
-    const handleContactClick = (contact: Contact) => {
-        setSelectedContact(contact.id);
-        onSelectContact?.(contact);
+    const handleSend = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!text.trim() || !localUser) return;
+
+        // Send via WebSocket/Mock service
+        ws.sendEvent('CHAT_MESSAGE', { text: text.trim() });
+        
+        setText('');
+    };
+
+    // Helper to identify if message sender belongs to local frame
+    const isLocalSender = (senderId: string) => {
+        return leftParticipants.some(p => p.id === senderId);
     };
 
     return (
         <div className="sidebar-chat">
             <div className="sidebar-header">
-                <h2 className="sidebar-title">Messages</h2>
-                <button onClick={onClose} className="close-button">
+                <h2 className="sidebar-title">General Chat</h2>
+                <button onClick={onClose} className="close-button" aria-label="Close Chat">
                     ✕
                 </button>
             </div>
 
-            <div className="sidebar-search">
+            {/* Chat Messages Logs */}
+            <div className="chat-messages-container">
+                {messages.length === 0 ? (
+                    <div className="empty-chat">
+                        <span className="empty-chat-icon">💬</span>
+                        <p>No messages yet. Send a message to start chatting!</p>
+                    </div>
+                ) : (
+                    messages.map((msg) => {
+                        if (msg.senderId === 'system') {
+                            return (
+                                <div key={msg.id} className="system-message">
+                                    <span className="system-text">{msg.text}</span>
+                                </div>
+                            );
+                        }
+
+                        const isLocal = isLocalSender(msg.senderId);
+                        return (
+                            <div
+                                key={msg.id}
+                                className={`chat-bubble-wrapper ${isLocal ? 'local-wrapper' : 'remote-wrapper'}`}
+                            >
+                                <div className="bubble-sender-name">
+                                    {msg.senderName} <span className="bubble-time">{msg.timestamp}</span>
+                                </div>
+                                <div className={`chat-bubble ${isLocal ? 'local-bubble' : 'remote-bubble'}`}>
+                                    {msg.text}
+                                </div>
+                            </div>
+                        );
+                    })
+                )}
+                <div ref={chatEndRef} />
+            </div>
+
+            {/* Chat Send Input Box */}
+            <form onSubmit={handleSend} className="chat-input-form">
                 <input
                     type="text"
-                    placeholder="Search conversations..."
-                    className="search-input"
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    placeholder="Type a message..."
+                    className="chat-message-input"
+                    maxLength={200}
                 />
-            </div>
-
-            <div className="sidebar-contacts">
-                {contacts.map((contact) => (
-                    <div
-                        key={contact.id}
-                        className={`contact-item ${selectedContact === contact.id ? 'active' : ''}`}
-                        onClick={() => handleContactClick(contact)}
-                    >
-                        <div className="contact-avatar">
-                            <div className="avatar-placeholder">
-                                {contact.name.charAt(0)}
-                            </div>
-                            {contact.online && <div className="online-indicator"></div>}
-                        </div>
-
-                        <div className="contact-info">
-                            <div className="contact-header">
-                                <span className="contact-name">{contact.name}</span>
-                                <span className="contact-time">{contact.timestamp}</span>
-                            </div>
-                            <div className="contact-message">
-                                <span className="message-text">{contact.lastMessage}</span>
-                                {contact.unread > 0 && (
-                                    <span className="unread-badge">{contact.unread}</span>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                ))}
-            </div>
+                <button type="submit" className="chat-send-btn" disabled={!text.trim()}>
+                    Send
+                </button>
+            </form>
         </div>
     );
 }

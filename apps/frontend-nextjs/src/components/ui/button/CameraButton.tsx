@@ -14,7 +14,8 @@ export default function CameraButton({ onClick, isOn = true, disabled = false }:
         <button
             onClick={onClick}
             disabled={disabled}
-            className="button toggle-button"
+            className={`button toggle-button ${isOn ? 'active-state' : 'inactive-state'}`}
+            aria-label={isOn ? "Turn off camera" : "Turn on camera"}
         >
             <CameraIcon />
             <span>Camera</span>

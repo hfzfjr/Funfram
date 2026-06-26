@@ -14,7 +14,8 @@ export default function MicrophoneButton({ onClick, isOn = true, disabled = fals
         <button
             onClick={onClick}
             disabled={disabled}
-            className="button toggle-button"
+            className={`button toggle-button ${isOn ? 'active-state' : 'inactive-state'}`}
+            aria-label={isOn ? "Mute microphone" : "Unmute microphone"}
         >
             <MicrophoneIcon />
             <span>Microphone</span>

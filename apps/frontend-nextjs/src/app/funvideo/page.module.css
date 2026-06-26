@@ -1,24 +1,17 @@
 .container {
     width: 100vw;
     height: 100vh;
-    background-color: black;
+    background-color: #1F2028;
     display: flex;
     flex-direction: column;
-}
-
-.content {
-    flex: 1;
-    display: flex;
     overflow: hidden;
 }
 
-.placeholder {
-    width: 100%;
-    height: 100%;
-    background-color: #27272a;
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
+/* Offset the fixed navbar (88px) */
+.content {
+    flex: 1;
+    margin-top: 88px;
+    /* bottom padding to avoid overlap with the floating control bar (~96px tall + 24px margin) */
+    padding-bottom: 120px;
+    overflow: hidden;
 }

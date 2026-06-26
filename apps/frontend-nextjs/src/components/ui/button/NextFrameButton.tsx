@@ -6,9 +6,10 @@ import './button.css';
 interface NextFrameButtonProps {
     onClick?: () => void;
     disabled?: boolean;
+    text?: string;
 }
 
-export default function NextFrameButton({ onClick, disabled = false }: NextFrameButtonProps) {
+export default function NextFrameButton({ onClick, disabled = false, text = "Next Frame" }: NextFrameButtonProps) {
     return (
         <button
             onClick={onClick}
@@ -16,7 +17,7 @@ export default function NextFrameButton({ onClick, disabled = false }: NextFrame
             className="button next-frame-button"
         >
             <NextFrameIcon />
-            <span>Next Frame</span>
+            <span>{text}</span>
         </button>
     );
 }
