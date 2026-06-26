@@ -1,0 +1,29 @@
+.container {
+  padding: 1rem;
+  background: rgba(255,255,255,0.08);
+  backdrop-filter: blur(8px);
+  border-radius: 0.75rem;
+  color: #fff;
+}
+.title {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.item {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+.player {
+  font-weight: 500;
+}
+.points {
+  font-weight: 700;
+}

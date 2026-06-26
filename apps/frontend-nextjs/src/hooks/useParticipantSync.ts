@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
 import { useCallStore } from '@/store/useCallStore';
-import type { CallStore } from '@/store/useCallStore';
-import { Participant, FrameSide, CallPhase } from '@/types/participant';
+import { Participant, FrameSide, AppFsmState } from '@/types/participant';
 
 interface ParticipantJoinEvent {
     type: 'participant:join';
@@ -22,16 +21,16 @@ interface ParticipantLeaveEvent {
 interface PhaseChangeEvent {
     type: 'phase:change';
     data: {
-        phase: CallPhase;
+        fsmState: AppFsmState;
     };
 }
 
 type WebSocketEvent = ParticipantJoinEvent | ParticipantLeaveEvent | PhaseChangeEvent;
 
 export function useParticipantSync(socket: WebSocket | null) {
-    const addParticipant = useCallStore((state: CallStore) => state.addParticipant);
-    const removeParticipant = useCallStore((state: CallStore) => state.removeParticipant);
-    const setPhase = useCallStore((state: CallStore) => state.setPhase);
+    const addParticipant = useCallStore((state) => state.addParticipant);
+    const removeParticipant = useCallStore((state) => state.removeParticipant);
+    const setFsmState = useCallStore((state) => state.setFsmState);
 
     useEffect(() => {
         if (!socket) return;
@@ -48,7 +47,7 @@ export function useParticipantSync(socket: WebSocket | null) {
                         removeParticipant(message.data.side, message.data.id);
                         break;
                     case 'phase:change':
-                        setPhase(message.data.phase);
+                        setFsmState(message.data.fsmState);
                         break;
                 }
             } catch (error) {
@@ -61,5 +60,5 @@ export function useParticipantSync(socket: WebSocket | null) {
         return () => {
             socket.removeEventListener('message', handleMessage);
         };
-    }, [socket, addParticipant, removeParticipant, setPhase]);
+    }, [socket, addParticipant, removeParticipant, setFsmState]);
 }

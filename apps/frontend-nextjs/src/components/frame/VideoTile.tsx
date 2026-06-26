@@ -1,5 +1,6 @@
 import { useRef, useEffect } from 'react';
 import { Participant } from '@/types/participant';
+import { useCallStore } from '@/store/useCallStore';
 import styles from './VideoTile.module.css';
 
 interface VideoTileProps {
@@ -8,10 +9,15 @@ interface VideoTileProps {
 
 export default function VideoTile({ participant }: VideoTileProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
+    const localUserId = useCallStore((state) => state.localUser?.id);
+    const isLocalVideo = participant.id === localUserId;
 
     useEffect(() => {
         if (videoRef.current && participant.stream) {
             videoRef.current.srcObject = participant.stream;
+            videoRef.current.play().catch(() => {
+                // The browser may still wait for the user gesture; controls can retry camera.
+            });
         }
     }, [participant.stream]);
 
@@ -31,7 +37,7 @@ export default function VideoTile({ participant }: VideoTileProps) {
                     ref={videoRef}
                     autoPlay
                     playsInline
-                    muted={participant.isMuted}
+                    muted={isLocalVideo || participant.isMuted}
                     className={styles.video}
                 />
             ) : (

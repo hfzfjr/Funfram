@@ -16,7 +16,7 @@ export default function LeaveFrameButton({ onClick, disabled = false }: LeaveFra
             className="button leave-frame-button"
         >
             <LeaveFrameIcon />
-            <span>Leave Frame</span>
+            <span>Leave</span>
         </button>
     );
 }

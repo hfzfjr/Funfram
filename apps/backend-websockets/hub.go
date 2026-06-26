@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"sort"
 	"sync"
 	"time"
 
@@ -11,37 +12,106 @@ import (
 )
 
 type Client struct {
-	Conn       *websocket.Conn
-	ID         string
-	LobbyID    string
-	Username   string
-	IsLobbyOwner bool
+	Conn         *websocket.Conn `json:"-"`
+	WriteMu      sync.Mutex      `json:"-"`
+	ID           string          `json:"id"`
+	LobbyID      string          `json:"-"`
+	Username     string          `json:"name"`
+	IsLobbyOwner bool            `json:"isOwner"`
+	IsMuted      bool            `json:"isMuted"`
+	IsCameraOff  bool            `json:"isCameraOff"`
+	Presence     string          `json:"presence"` // ONLINE, MATCHING, PLAYING, DRAWING, GUESSING, IDLE, OFFLINE
+	JoinOrder    int             `json:"joinOrder"`
+	LastNextClick time.Time       `json:"-"`
+}
+
+func (c *Client) Send(message interface{}) error {
+	data, err := json.Marshal(message)
+	if err != nil {
+		return err
+	}
+	c.WriteMu.Lock()
+	defer c.WriteMu.Unlock()
+	return c.Conn.WriteMessage(websocket.TextMessage, data)
 }
 
 type Lobby struct {
-	ID          string
-	OwnerID     string
-	InviteCode  string
-	Status      string // waiting, matched, closed
-	Members     map[string]*Client
-	CreatedAt   time.Time
+	ID         string
+	OwnerID    string
+	InviteCode string
+	Status     string // waiting, matched, closed
+	Members    map[string]*Client
+	CreatedAt  time.Time
+}
+
+type Frame struct {
+	ID      string    `json:"id"`
+	OwnerID string    `json:"ownerId"`
+	Members []*Client `json:"members"`
+}
+
+type Session struct {
+	SessionID   string    `json:"sessionId"`
+	FrameA      Frame     `json:"frameA"`
+	FrameB      Frame     `json:"frameB"`
+	CreatedAt   string    `json:"createdAt"`
+	State       string    `json:"state"`
+	CurrentGame *string   `json:"currentGame"`
+	Players     []*Client `json:"players"`
+	Events      []string  `json:"events"`
 }
 
 type Match struct {
-	ID         string
-	LobbyA     *Lobby
-	LobbyB     *Lobby
-	CreatedAt  time.Time
-	EndedAt    *time.Time
+	ID        string
+	LobbyA    *Lobby
+	LobbyB    *Lobby
+	CreatedAt time.Time
+	EndedAt   *time.Time
+}
+
+func (l *Lobby) ToFrame() Frame {
+	membersList := make([]*Client, 0)
+	for _, m := range l.Members {
+		membersList = append(membersList, m)
+	}
+	sort.Slice(membersList, func(i, j int) bool {
+		return membersList[i].JoinOrder < membersList[j].JoinOrder
+	})
+	return Frame{
+		ID:      l.ID,
+		OwnerID: l.OwnerID,
+		Members: membersList,
+	}
+}
+
+func (m *Match) ToSession() Session {
+	frameA := m.LobbyA.ToFrame()
+	frameB := m.LobbyB.ToFrame()
+
+	players := make([]*Client, 0)
+	players = append(players, frameA.Members...)
+	players = append(players, frameB.Members...)
+
+	currentGame := "guess_drawing"
+	return Session{
+		SessionID:   m.ID,
+		FrameA:      frameA,
+		FrameB:      frameB,
+		CreatedAt:   m.CreatedAt.Format(time.RFC3339),
+		State:       "ActiveMeeting",
+		CurrentGame: &currentGame,
+		Players:     players,
+		Events:      make([]string, 0),
+	}
 }
 
 type GameMessage struct {
-	Type      string `json:"type"`
-	Game      string `json:"game,omitempty"`
-	Move      string `json:"move,omitempty"`
-	Score     int    `json:"score,omitempty"`
-	Sender    string `json:"sender,omitempty"`
-	Data      interface{} `json:"data,omitempty"`
+	Type   string      `json:"type"`
+	Game   string      `json:"game,omitempty"`
+	Move   string      `json:"move,omitempty"`
+	Score  int         `json:"score,omitempty"`
+	Sender string      `json:"sender,omitempty"`
+	Data   interface{} `json:"data,omitempty"`
 }
 
 type Hub struct {
@@ -117,6 +187,8 @@ func (h *Hub) JoinLobby(lobbyID, userID, username string, client *Client) error 
 	client.LobbyID = lobbyID
 	client.Username = username
 	client.IsLobbyOwner = (userID == lobby.OwnerID)
+	client.Presence = "ONLINE"
+	client.JoinOrder = len(lobby.Members) + 1
 
 	lobby.Members[userID] = client
 	h.clients[userID] = client
@@ -187,6 +259,15 @@ func (h *Hub) AddToMatchmaking(lobbyID string) {
 func (h *Hub) createMatch(lobbyA, lobbyB *Lobby) {
 	matchID := fmt.Sprintf("match-%d", time.Now().UnixNano())
 
+	if db != nil {
+		_, err := CreateMatchDB(lobbyA.ID, lobbyB.ID)
+		if err != nil {
+			fmt.Printf("Error creating match in DB: %v\n", err)
+		}
+		UpdateLobbyStatus(lobbyA.ID, "matched")
+		UpdateLobbyStatus(lobbyB.ID, "matched")
+	}
+
 	match := &Match{
 		ID:        matchID,
 		LobbyA:    lobbyA,
@@ -197,20 +278,44 @@ func (h *Hub) createMatch(lobbyA, lobbyB *Lobby) {
 	lobbyA.Status = "matched"
 	lobbyB.Status = "matched"
 
+	for _, client := range lobbyA.Members {
+		client.Presence = "PLAYING"
+	}
+	for _, client := range lobbyB.Members {
+		client.Presence = "PLAYING"
+	}
+
 	h.matches[matchID] = match
 
-	// Notify all members in both lobbies
+	session := match.ToSession()
+
 	h.broadcastToLobby(lobbyA.ID, map[string]interface{}{
-		"type":    "MATCHED",
-		"matchID": matchID,
-		"role":    "A",
+		"event":   "MATCH_FOUND",
+		"payload": session,
 	})
 
 	h.broadcastToLobby(lobbyB.ID, map[string]interface{}{
-		"type":    "MATCHED",
-		"matchID": matchID,
-		"role":    "B",
+		"event":   "MATCH_FOUND",
+		"payload": session,
 	})
+}
+
+func (h *Hub) broadcastEventToLobby(lobbyID string, event string, payload interface{}) {
+	h.broadcastToLobby(lobbyID, map[string]interface{}{
+		"event":   event,
+		"payload": payload,
+	})
+}
+
+func (h *Hub) broadcastEventToMatch(matchID string, event string, payload interface{}) {
+	h.mu.RLock()
+	match, exists := h.matches[matchID]
+	h.mu.RUnlock()
+	if !exists {
+		return
+	}
+	h.broadcastEventToLobby(match.LobbyA.ID, event, payload)
+	h.broadcastEventToLobby(match.LobbyB.ID, event, payload)
 }
 
 func (h *Hub) broadcastToLobby(lobbyID string, message interface{}) {
@@ -219,9 +324,8 @@ func (h *Hub) broadcastToLobby(lobbyID string, message interface{}) {
 		return
 	}
 
-	data, _ := json.Marshal(message)
 	for _, client := range lobby.Members {
-		if client.Conn.WriteMessage(websocket.TextMessage, data) == nil {
+		if client.Send(message) == nil {
 			// Message sent successfully
 		}
 	}
@@ -243,11 +347,9 @@ func (h *Hub) HandleGameMessage(userID string, msg GameMessage) {
 
 	// Broadcast game message to all members in the lobby
 	msg.Sender = userID
-	data, _ := json.Marshal(msg)
-
 	for _, member := range lobby.Members {
 		if member.ID != userID {
-			member.Conn.WriteMessage(websocket.TextMessage, data)
+			member.Send(msg)
 		}
 	}
 }

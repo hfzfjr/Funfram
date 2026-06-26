@@ -1,20 +1,28 @@
+/*
+  Two-column meeting layout.
+  Spec: 32px outer margin, 32px gap, height = remaining viewport, rounded 32px panels.
+*/
 .container {
     width: 100%;
-    margin-top: 80px;
-    height: calc(100vh - 180px);
+    height: 100%;
     display: flex;
-    gap: 16px;
-    padding: 16px;
-    background-color: black;
+    gap: 32px;
+    padding: 0 32px 32px 32px;
+    background-color: #1F2028;
     overflow: hidden;
+    box-sizing: border-box;
 }
 
 .side {
     flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
+    border-radius: 32px;
+    overflow: hidden;
 }
 
+/* Searching state helpers (spinner) */
 .matching {
     flex: 1;
     display: flex;
@@ -27,16 +35,14 @@
 .spinner {
     width: 48px;
     height: 48px;
-    border: 4px solid #3a3a3a;
-    border-top-color: #3b82f6;
+    border: 4px solid #2A2C36;
+    border-top-color: #08A7FD;
     border-radius: 50%;
     animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
+    to { transform: rotate(360deg); }
 }
 
 .matchingText {

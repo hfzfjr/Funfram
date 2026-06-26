@@ -65,17 +65,34 @@
 .toggle-button {
     background: #00285D;
     color: white;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.toggle-button:hover {
-    background: #00285D;
+.toggle-button.active-state {
+    background: #08A7FD;
+    box-shadow: 0 0 10px rgba(8, 167, 253, 0.4);
+}
+
+.toggle-button.active-state:hover {
+    background: #0052BE;
+}
+
+.toggle-button.inactive-state {
+    background: #93000A;
+    opacity: 0.8;
+}
+
+.toggle-button.inactive-state:hover {
+    background: #b22222;
+    opacity: 1;
 }
 
 .toggle-button:active {
-    transform: scale(0.95);
+    transform: scale(0.92);
 }
 
 .chat-button {
+    position: relative;
     background: #191B22;
     color: white;
 }
