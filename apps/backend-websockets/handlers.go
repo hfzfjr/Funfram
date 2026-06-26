@@ -72,6 +72,18 @@ type ChatMessagePayload struct {
 	Text string `json:"text"`
 }
 
+type FrameLeavePayload struct {
+	FrameID   string `json:"frameId"`
+	SessionID string `json:"sessionId"`
+}
+
+type DeviceStateChangePayload struct {
+	SessionID         string `json:"sessionId"`
+	UserID            string `json:"userId"`
+	CameraEnabled     bool   `json:"cameraEnabled"`
+	MicrophoneEnabled bool   `json:"microphoneEnabled"`
+}
+
 // generateTempID returns a UUID v4-formatted string using crypto/rand.
 // Used when the DB is unavailable so no non-UUID strings enter UUID columns on reconnect.
 func generateTempID() string {
@@ -81,6 +93,64 @@ func generateTempID() string {
 	b[8] = (b[8] & 0x3f) | 0x80 // variant bits
 	s := hex.EncodeToString(b)
 	return s[:8] + "-" + s[8:12] + "-" + s[12:16] + "-" + s[16:20] + "-" + s[20:]
+}
+
+func cleanupMatchForLobby(hub *Hub, lobbyID string) (string, string) {
+	var otherLobbyID string
+	var activeMatchID string
+
+	hub.mu.Lock()
+	for mID, match := range hub.matches {
+		if match.LobbyA.ID == lobbyID || match.LobbyB.ID == lobbyID {
+			activeMatchID = mID
+			break
+		}
+	}
+
+	if activeMatchID != "" {
+		match := hub.matches[activeMatchID]
+		otherLobby := match.LobbyA
+		if otherLobby.ID == lobbyID {
+			otherLobby = match.LobbyB
+		}
+		otherLobbyID = otherLobby.ID
+
+		delete(hub.matches, activeMatchID)
+
+		if ge := GetGameEngine(activeMatchID); ge != nil {
+			close(ge.stopChan)
+			enginesMu.Lock()
+			delete(engines, activeMatchID)
+			enginesMu.Unlock()
+		}
+
+		if currentLobby, exists := hub.lobbies[lobbyID]; exists {
+			currentLobby.Status = "WAITING"
+			for _, member := range currentLobby.Members {
+				member.Presence = "MATCHING"
+			}
+		}
+
+		if otherLobbyState, exists := hub.lobbies[otherLobbyID]; exists {
+			otherLobbyState.Status = "WAITING"
+			for _, member := range otherLobbyState.Members {
+				member.Presence = "MATCHING"
+			}
+		}
+	}
+	hub.mu.Unlock()
+
+	if activeMatchID != "" && db != nil {
+		if err := EndMatchDB(activeMatchID); err != nil {
+			fmt.Printf("Error ending match in DB: %v\n", err)
+		}
+		_ = UpdateLobbyStatus(lobbyID, "WAITING")
+		if otherLobbyID != "" {
+			_ = UpdateLobbyStatus(otherLobbyID, "WAITING")
+		}
+	}
+
+	return activeMatchID, otherLobbyID
 }
 
 func handleConnections(hub *Hub, ws *websocket.Conn) {
@@ -104,47 +174,24 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 	fmt.Printf("✅ New WebSocket connection: %s from %s\n", userID, ws.RemoteAddr())
 
 	defer func() {
-		var otherLobbyID string
-		hub.mu.Lock()
 		lobbyID := client.LobbyID
 		userID := client.ID
-
-		// If matched, cleanup match
-		var activeMatchID string
-		for mID, match := range hub.matches {
-			if match.LobbyA.ID == lobbyID || match.LobbyB.ID == lobbyID {
-				activeMatchID = mID
-				break
-			}
-		}
-		if activeMatchID != "" {
-			match := hub.matches[activeMatchID]
-			otherLobby := match.LobbyA
-			if otherLobby.ID == lobbyID {
-				otherLobby = match.LobbyB
-			}
-			delete(hub.matches, activeMatchID)
-
-			// Stop game loop if active
-			ge := GetGameEngine(activeMatchID)
-			if ge != nil {
-				close(ge.stopChan)
-				enginesMu.Lock()
-				delete(engines, activeMatchID)
-				enginesMu.Unlock()
-			}
-
-			// Reset other frame back to searching and notify them
-			otherLobbyID = otherLobby.ID
-			otherLobby.Status = "waiting"
-			for _, member := range otherLobby.Members {
-				member.Presence = "MATCHING"
-			}
-		}
-		hub.mu.Unlock()
-
+		activeMatchID, otherLobbyID := cleanupMatchForLobby(hub, lobbyID)
 		if otherLobbyID != "" {
+			hub.broadcastEventToLobby(lobbyID, "PLAYER_LEFT", map[string]interface{}{
+				"userId":    userID,
+				"frameId":   lobbyID,
+				"sessionId": activeMatchID,
+				"reason":    "DISCONNECT",
+			})
+			hub.broadcastEventToLobby(lobbyID, "MATCH_LEFT", map[string]interface{}{})
 			hub.broadcastEventToLobby(otherLobbyID, "MATCH_LEFT", map[string]interface{}{})
+			hub.broadcastEventToLobby(otherLobbyID, "PLAYER_LEFT", map[string]interface{}{
+				"userId":    userID,
+				"frameId":   lobbyID,
+				"sessionId": activeMatchID,
+				"reason":    "DISCONNECT",
+			})
 			hub.broadcastEventToLobby(otherLobbyID, "PRESENCE_UPDATE", map[string]interface{}{
 				"frameId":  otherLobbyID,
 				"presence": "MATCHING",
@@ -153,6 +200,9 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 		}
 
 		hub.LeaveLobby(userID)
+		if db != nil && userID != "" {
+			_ = UpsertUserPresence(userID, "OFFLINE", "")
+		}
 		ws.Close()
 		fmt.Printf("❌ Client disconnected: %s\n", userID)
 	}()
@@ -206,6 +256,11 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 				dbLobbyID = "lobby-" + generateTempID()
 			}
 
+			if db != nil {
+				_ = UpsertUserPresence(dbUserID, "ONLINE", "")
+				_ = UpsertUserDeviceState(dbUserID, "", true, true)
+			}
+
 			client.ID = dbUserID
 			client.Username = payload.Username
 			client.LobbyID = dbLobbyID
@@ -218,7 +273,7 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 				ID:         dbLobbyID,
 				OwnerID:    dbUserID,
 				InviteCode: inviteCode,
-				Status:     "waiting",
+				Status:     "WAITING",
 				Members:    make(map[string]*Client),
 				CreatedAt:  time.Now(),
 			}
@@ -253,9 +308,13 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 					fmt.Printf("Error getting/creating user: %v\n", err)
 					dbUserID = generateTempID()
 				}
-				AddLobbyMember(payload.FrameID, dbUserID)
 			} else {
 				dbUserID = generateTempID()
+			}
+
+			if db != nil {
+				_ = UpsertUserPresence(dbUserID, "ONLINE", "")
+				_ = UpsertUserDeviceState(dbUserID, "", true, true)
 			}
 
 			client.ID = dbUserID
@@ -266,6 +325,10 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 			if err != nil {
 				sendError(ws, err.Error())
 				continue
+			}
+
+			if db != nil {
+				_ = AddLobbyMember(payload.FrameID, dbUserID)
 			}
 
 			hub.mu.RLock()
@@ -304,7 +367,7 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 				for _, member := range lobby.Members {
 					member.Presence = "MATCHING"
 				}
-				lobby.Status = "waiting"
+				lobby.Status = "WAITING"
 			}
 			hub.mu.Unlock()
 
@@ -322,53 +385,29 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 			}
 			client.LastNextClick = time.Now()
 
-			var otherLobbyID string
-			hub.mu.Lock()
-			var activeMatchID string
-			for mID, match := range hub.matches {
-				if match.LobbyA.ID == client.LobbyID || match.LobbyB.ID == client.LobbyID {
-					activeMatchID = mID
-					break
-				}
+			activeMatchID, otherLobbyID := cleanupMatchForLobby(hub, client.LobbyID)
+			if db != nil && client.ID != "" {
+				_ = UpsertUserPresence(client.ID, "MATCHING", activeMatchID)
 			}
-			if activeMatchID != "" {
-				match := hub.matches[activeMatchID]
-				otherLobby := match.LobbyA
-				if otherLobby.ID == client.LobbyID {
-					otherLobby = match.LobbyB
-				}
-				delete(hub.matches, activeMatchID)
-
-				ge := GetGameEngine(activeMatchID)
-				if ge != nil {
-					close(ge.stopChan)
-					enginesMu.Lock()
-					delete(engines, activeMatchID)
-					enginesMu.Unlock()
-				}
-
-				otherLobbyID = otherLobby.ID
-				otherLobby.Status = "waiting"
-				for _, member := range otherLobby.Members {
-					member.Presence = "MATCHING"
-				}
-			}
-
-			lobby, exists := hub.lobbies[client.LobbyID]
-			if exists {
-				for _, member := range lobby.Members {
-					member.Presence = "MATCHING"
-				}
-				lobby.Status = "waiting"
-			}
-			hub.mu.Unlock()
 
 			hub.broadcastEventToLobby(client.LobbyID, "PRESENCE_UPDATE", map[string]interface{}{
 				"frameId":  client.LobbyID,
 				"presence": "MATCHING",
 			})
+			hub.broadcastEventToLobby(client.LobbyID, "PLAYER_LEFT", map[string]interface{}{
+				"userId":    client.ID,
+				"frameId":   client.LobbyID,
+				"sessionId": activeMatchID,
+				"reason":    "FRAME_NEXT",
+			})
 			if otherLobbyID != "" {
 				hub.broadcastEventToLobby(otherLobbyID, "MATCH_LEFT", map[string]interface{}{})
+				hub.broadcastEventToLobby(otherLobbyID, "PLAYER_LEFT", map[string]interface{}{
+					"userId":    client.ID,
+					"frameId":   client.LobbyID,
+					"sessionId": activeMatchID,
+					"reason":    "FRAME_NEXT",
+				})
 				hub.broadcastEventToLobby(otherLobbyID, "PRESENCE_UPDATE", map[string]interface{}{
 					"frameId":  otherLobbyID,
 					"presence": "MATCHING",
@@ -377,6 +416,72 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 			}
 
 			hub.AddToMatchmaking(client.LobbyID)
+
+		case "FRAME_LEAVE":
+			var payload FrameLeavePayload
+			if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+				sendError(ws, "Invalid payload")
+				continue
+			}
+			if payload.FrameID != "" && payload.FrameID != client.LobbyID {
+				sendError(ws, "frame mismatch")
+				continue
+			}
+
+			activeMatchID, otherLobbyID := cleanupMatchForLobby(hub, client.LobbyID)
+			if db != nil && client.ID != "" {
+				_ = UpsertUserPresence(client.ID, "ONLINE", "")
+			}
+
+			if otherLobbyID != "" {
+				hub.broadcastEventToLobby(otherLobbyID, "PLAYER_LEFT", map[string]interface{}{
+					"userId":    client.ID,
+					"frameId":   client.LobbyID,
+					"sessionId": activeMatchID,
+					"reason":    "FRAME_LEAVE",
+				})
+				hub.broadcastEventToLobby(otherLobbyID, "MATCH_LEFT", map[string]interface{}{})
+				hub.broadcastEventToLobby(otherLobbyID, "PRESENCE_UPDATE", map[string]interface{}{
+					"frameId":  otherLobbyID,
+					"presence": "MATCHING",
+				})
+				hub.AddToMatchmaking(otherLobbyID)
+			}
+
+			hub.LeaveLobby(client.ID)
+
+		case "DEVICE_STATE_CHANGE":
+			var payload DeviceStateChangePayload
+			if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+				sendError(ws, "Invalid payload")
+				continue
+			}
+
+			hub.mu.Lock()
+			if targetClient, exists := hub.clients[payload.UserID]; exists {
+				targetClient.IsCameraOff = !payload.CameraEnabled
+				targetClient.IsMuted = !payload.MicrophoneEnabled
+			}
+			if lobby, exists := hub.lobbies[client.LobbyID]; exists {
+				for _, member := range lobby.Members {
+					if member.ID == payload.UserID {
+						member.IsCameraOff = !payload.CameraEnabled
+						member.IsMuted = !payload.MicrophoneEnabled
+					}
+				}
+			}
+			hub.mu.Unlock()
+
+			if db != nil && payload.UserID != "" {
+				_ = UpsertUserDeviceState(payload.UserID, payload.SessionID, payload.CameraEnabled, payload.MicrophoneEnabled)
+			}
+
+			hub.broadcastEventToLobby(client.LobbyID, "DEVICE_STATE_CHANGE", map[string]interface{}{
+				"userId":            payload.UserID,
+				"sessionId":         payload.SessionID,
+				"cameraEnabled":     payload.CameraEnabled,
+				"microphoneEnabled": payload.MicrophoneEnabled,
+			})
 
 		case "GAME_INVITE":
 			var payload GameInvitePayload

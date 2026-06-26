@@ -56,3 +56,21 @@
     border-radius: 50%;
     color: white;
 }
+
+.statusIcons {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.statusIcon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    background-color: rgba(15, 23, 42, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    color: white;
+}

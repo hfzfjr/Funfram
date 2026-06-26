@@ -5,6 +5,7 @@
   --foreground: #ededed;
   --primary-accent: #08A7FD;
   --primary-gradient: linear-gradient(to right, #08A7FD, #0052BE);
+  --font-plus-jakarta-sans: "Plus Jakarta Sans", "Segoe UI", system-ui, sans-serif;
 }
 
 @theme inline {

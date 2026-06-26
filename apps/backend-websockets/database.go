@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/joho/godotenv"
@@ -108,7 +110,7 @@ func CreateLobbyDB(ownerID, inviteCode string) (string, error) {
 
 	err := db.QueryRow(ctx,
 		"INSERT INTO lobbies (owner_id, invite_code, status) VALUES ($1, $2, $3) RETURNING id",
-		ownerID, inviteCode, "waiting",
+		ownerID, inviteCode, "WAITING",
 	).Scan(&lobbyID)
 
 	if err != nil {
@@ -151,10 +153,11 @@ func UpdateLobbyStatus(lobbyID, status string) error {
 	}
 
 	ctx := context.Background()
+	normalizedStatus := strings.ToUpper(strings.TrimSpace(status))
 
 	_, err := db.Exec(ctx,
 		"UPDATE lobbies SET status = $1 WHERE id = $2",
-		status, lobbyID,
+		normalizedStatus, lobbyID,
 	)
 
 	if err != nil {
@@ -162,6 +165,116 @@ func UpdateLobbyStatus(lobbyID, status string) error {
 	}
 
 	return nil
+}
+
+func UpsertUserPresence(userID, presenceState, sessionID string) error {
+	if db == nil {
+		return fmt.Errorf("database not initialized")
+	}
+
+	ctx := context.Background()
+	_, err := db.Exec(ctx, `
+		INSERT INTO user_presence (user_id, presence_state, session_id, last_heartbeat)
+		VALUES ($1, $2, NULLIF($3, '')::uuid, NOW())
+		ON CONFLICT (user_id)
+		DO UPDATE SET
+			presence_state = EXCLUDED.presence_state,
+			session_id = EXCLUDED.session_id,
+			last_heartbeat = NOW()
+	`, userID, strings.ToUpper(strings.TrimSpace(presenceState)), sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to upsert user presence: %w", err)
+	}
+	return nil
+}
+
+func UpsertUserDeviceState(userID, sessionID string, cameraEnabled, microphoneEnabled bool) error {
+	if db == nil {
+		return fmt.Errorf("database not initialized")
+	}
+
+	ctx := context.Background()
+	_, err := db.Exec(ctx, `
+		INSERT INTO user_device_state (user_id, session_id, camera_enabled, microphone_enabled, updated_at)
+		VALUES ($1, NULLIF($2, '')::uuid, $3, $4, NOW())
+		ON CONFLICT (user_id, session_id)
+		DO UPDATE SET
+			camera_enabled = EXCLUDED.camera_enabled,
+			microphone_enabled = EXCLUDED.microphone_enabled,
+			updated_at = NOW()
+	`, userID, sessionID, cameraEnabled, microphoneEnabled)
+	if err != nil {
+		return fmt.Errorf("failed to upsert user device state: %w", err)
+	}
+	return nil
+}
+
+func CreateSessionDB(frameA, frameB string) (string, error) {
+	if db == nil {
+		return "", fmt.Errorf("database not initialized")
+	}
+
+	ctx := context.Background()
+	var sessionID string
+	err := db.QueryRow(ctx,
+		"INSERT INTO sessions (frame_a_id, frame_b_id, game_state, current_game) VALUES ($1, $2, $3, $4) RETURNING id",
+		frameA, frameB, "WAITING", nil,
+	).Scan(&sessionID)
+	if err != nil {
+		return "", fmt.Errorf("failed to create session: %w", err)
+	}
+	return sessionID, nil
+}
+
+func CreateInviteLink(frameID, createdBy string) (string, error) {
+	if db == nil {
+		return "", fmt.Errorf("database not initialized")
+	}
+
+	ctx := context.Background()
+	inviteCode := fmt.Sprintf("INV-%s", strings.ToUpper(generateInviteCodeValue(8)))
+	var storedCode string
+	err := db.QueryRow(ctx, `
+		INSERT INTO invite_links (frame_id, invite_code, created_by, expires_at)
+		VALUES ($1, $2, $3, NOW() + INTERVAL '15 minutes')
+		RETURNING invite_code
+	`, frameID, inviteCode, createdBy).Scan(&storedCode)
+	if err != nil {
+		return "", fmt.Errorf("failed to create invite link: %w", err)
+	}
+	return storedCode, nil
+}
+
+func ValidateInviteLink(frameID, inviteCode string) (bool, error) {
+	if db == nil {
+		return false, fmt.Errorf("database not initialized")
+	}
+
+	ctx := context.Background()
+	var exists bool
+	err := db.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM invite_links
+			WHERE frame_id = $1
+			  AND invite_code = $2
+			  AND is_active = TRUE
+			  AND (expires_at IS NULL OR expires_at > NOW())
+		)
+	`, frameID, inviteCode).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("failed to validate invite link: %w", err)
+	}
+	return exists, nil
+}
+
+func generateInviteCodeValue(length int) string {
+	const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	result := make([]byte, length)
+	for i := 0; i < length; i++ {
+		result[i] = chars[rand.Intn(len(chars))]
+	}
+	return string(result)
 }
 
 // Lobby member operations

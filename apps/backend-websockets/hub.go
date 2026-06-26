@@ -12,16 +12,16 @@ import (
 )
 
 type Client struct {
-	Conn         *websocket.Conn `json:"-"`
-	WriteMu      sync.Mutex      `json:"-"`
-	ID           string          `json:"id"`
-	LobbyID      string          `json:"-"`
-	Username     string          `json:"name"`
-	IsLobbyOwner bool            `json:"isOwner"`
-	IsMuted      bool            `json:"isMuted"`
-	IsCameraOff  bool            `json:"isCameraOff"`
-	Presence     string          `json:"presence"` // ONLINE, MATCHING, PLAYING, DRAWING, GUESSING, IDLE, OFFLINE
-	JoinOrder    int             `json:"joinOrder"`
+	Conn          *websocket.Conn `json:"-"`
+	WriteMu       sync.Mutex      `json:"-"`
+	ID            string          `json:"id"`
+	LobbyID       string          `json:"-"`
+	Username      string          `json:"name"`
+	IsLobbyOwner  bool            `json:"isOwner"`
+	IsMuted       bool            `json:"isMuted"`
+	IsCameraOff   bool            `json:"isCameraOff"`
+	Presence      string          `json:"presence"` // ONLINE, MATCHING, PLAYING, DRAWING, GUESSING, IDLE, OFFLINE
+	JoinOrder     int             `json:"joinOrder"`
 	LastNextClick time.Time       `json:"-"`
 }
 
@@ -39,7 +39,7 @@ type Lobby struct {
 	ID         string
 	OwnerID    string
 	InviteCode string
-	Status     string // waiting, matched, closed
+	Status     string // WAITING, MATCHING, MATCHED, PLAYING, CLOSED
 	Members    map[string]*Client
 	CreatedAt  time.Time
 }
@@ -115,21 +115,21 @@ type GameMessage struct {
 }
 
 type Hub struct {
-	clients       map[string]*Client
-	lobbies       map[string]*Lobby
-	inviteCodes   map[string]string // invite_code -> lobby_id
-	waitingQueue  []*Lobby
-	matches       map[string]*Match
-	mu            sync.RWMutex
+	clients      map[string]*Client
+	lobbies      map[string]*Lobby
+	inviteCodes  map[string]string // invite_code -> lobby_id
+	waitingQueue []*Lobby
+	matches      map[string]*Match
+	mu           sync.RWMutex
 }
 
 func NewHub() *Hub {
 	return &Hub{
-		clients:     make(map[string]*Client),
-		lobbies:     make(map[string]*Lobby),
-		inviteCodes: make(map[string]string),
+		clients:      make(map[string]*Client),
+		lobbies:      make(map[string]*Lobby),
+		inviteCodes:  make(map[string]string),
 		waitingQueue: make([]*Lobby, 0),
-		matches:     make(map[string]*Match),
+		matches:      make(map[string]*Match),
 	}
 }
 
@@ -160,7 +160,7 @@ func (h *Hub) CreateLobby(ownerID, username string) *Lobby {
 		ID:         lobbyID,
 		OwnerID:    ownerID,
 		InviteCode: inviteCode,
-		Status:     "waiting",
+		Status:     "WAITING",
 		Members:    make(map[string]*Client),
 		CreatedAt:  time.Now(),
 	}
@@ -180,7 +180,11 @@ func (h *Hub) JoinLobby(lobbyID, userID, username string, client *Client) error 
 		return fmt.Errorf("lobby not found")
 	}
 
-	if lobby.Status != "waiting" {
+	if len(lobby.Members) >= 4 {
+		return fmt.Errorf("lobby is full")
+	}
+
+	if lobby.Status != "WAITING" {
 		return fmt.Errorf("lobby is not accepting new members")
 	}
 
@@ -224,6 +228,13 @@ func (h *Hub) LeaveLobby(userID string) {
 
 			// If lobby is empty, delete it
 			if len(lobby.Members) == 0 {
+				newQueue := make([]*Lobby, 0, len(h.waitingQueue))
+				for _, waitingLobby := range h.waitingQueue {
+					if waitingLobby.ID != client.LobbyID {
+						newQueue = append(newQueue, waitingLobby)
+					}
+				}
+				h.waitingQueue = newQueue
 				delete(h.lobbies, client.LobbyID)
 				delete(h.inviteCodes, lobby.InviteCode)
 			}
@@ -238,13 +249,13 @@ func (h *Hub) AddToMatchmaking(lobbyID string) {
 	defer h.mu.Unlock()
 
 	lobby, exists := h.lobbies[lobbyID]
-	if !exists || lobby.Status != "waiting" {
+	if !exists || lobby.Status != "WAITING" {
 		return
 	}
 
 	// Check if there's a waiting lobby to match with
 	for i, waitingLobby := range h.waitingQueue {
-		if waitingLobby.ID != lobbyID && waitingLobby.Status == "waiting" {
+		if waitingLobby.ID != lobbyID && waitingLobby.Status == "WAITING" {
 			// Match found!
 			h.createMatch(lobby, waitingLobby)
 			h.waitingQueue = append(h.waitingQueue[:i], h.waitingQueue[i+1:]...)
@@ -264,8 +275,8 @@ func (h *Hub) createMatch(lobbyA, lobbyB *Lobby) {
 		if err != nil {
 			fmt.Printf("Error creating match in DB: %v\n", err)
 		}
-		UpdateLobbyStatus(lobbyA.ID, "matched")
-		UpdateLobbyStatus(lobbyB.ID, "matched")
+		UpdateLobbyStatus(lobbyA.ID, "MATCHED")
+		UpdateLobbyStatus(lobbyB.ID, "MATCHED")
 	}
 
 	match := &Match{
@@ -275,8 +286,8 @@ func (h *Hub) createMatch(lobbyA, lobbyB *Lobby) {
 		CreatedAt: time.Now(),
 	}
 
-	lobbyA.Status = "matched"
-	lobbyB.Status = "matched"
+	lobbyA.Status = "MATCHED"
+	lobbyB.Status = "MATCHED"
 
 	for _, client := range lobbyA.Members {
 		client.Presence = "PLAYING"

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import './auth.css';
 
 interface AuthOverlayProps {
@@ -11,8 +11,16 @@ export default function AuthOverlay({ onConfirm }: AuthOverlayProps) {
     const [username, setUsername] = useState('');
     const [isConfirmed, setIsConfirmed] = useState(false);
 
+    useEffect(() => {
+        const savedUsername = localStorage.getItem('funfram_username');
+        if (savedUsername) {
+            setUsername(savedUsername);
+        }
+    }, []);
+
     const handleConfirm = () => {
         if (username.trim()) {
+            localStorage.setItem('funfram_username', username.trim());
             setIsConfirmed(true);
             onConfirm(username.trim());
         }

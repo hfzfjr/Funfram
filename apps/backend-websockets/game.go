@@ -9,7 +9,7 @@ import (
 
 var (
 	WordsPool = []string{"Apple", "Banana", "Cat", "Dog", "Elephant", "Flower", "Giraffe", "House", "Ice", "Jungle", "Kite", "Lemon", "Monkey", "Notebook", "Orange", "Penguin", "Queen", "Rabbit", "Sun", "Tree", "Umbrella", "Violin", "Water", "Xylophone", "Yacht", "Zebra"}
-	
+
 	engines   = make(map[string]*GameEngine)
 	enginesMu sync.RWMutex
 )
@@ -24,26 +24,26 @@ type GuessEvent struct {
 }
 
 type GuessDrawingState struct {
-	CurrentRound    int               `json:"currentRound"`
-	CurrentDrawerID string            `json:"currentDrawerId"`
-	CurrentWord     string            `json:"currentWord"`
-	WordHint        string            `json:"wordHint"`
-	TimeRemaining   int               `json:"timeRemaining"`
-	DrawTimer       int               `json:"drawTimer"`
-	CanvasEvents    []interface{}     `json:"canvasEvents"`
-	GuessEvents     []GuessEvent      `json:"guessEvents"`
-	Score           map[string]int    `json:"score"`
-	Queue           []string          `json:"queue"`
-	Winner          *string           `json:"winner"`
-	Status          string            `json:"status"` // Waiting, Countdown, Drawing, Reveal, NextRound, Finished
+	CurrentRound    int            `json:"currentRound"`
+	CurrentDrawerID string         `json:"currentDrawerId"`
+	CurrentWord     string         `json:"currentWord"`
+	WordHint        string         `json:"wordHint"`
+	TimeRemaining   int            `json:"timeRemaining"`
+	DrawTimer       int            `json:"drawTimer"`
+	CanvasEvents    []interface{}  `json:"canvasEvents"`
+	GuessEvents     []GuessEvent   `json:"guessEvents"`
+	Score           map[string]int `json:"score"`
+	Queue           []string       `json:"queue"`
+	Winner          *string        `json:"winner"`
+	Status          string         `json:"status"` // Waiting, Countdown, Drawing, Reveal, NextRound, Finished
 }
 
 type GameEngine struct {
-	MatchID     string
-	Hub         *Hub
-	State       GuessDrawingState
-	mu          sync.RWMutex
-	stopChan    chan struct{}
+	MatchID  string
+	Hub      *Hub
+	State    GuessDrawingState
+	mu       sync.RWMutex
+	stopChan chan struct{}
 }
 
 func StartGame(hub *Hub, matchID string) *GameEngine {
@@ -138,7 +138,7 @@ func (ge *GameEngine) runRound(queueIndex int) {
 	}
 
 	currentDrawerID := ge.State.Queue[queueIndex]
-	
+
 	ge.Hub.mu.RLock()
 	// Check if drawer is still online
 	_, exists := ge.Hub.clients[currentDrawerID]
@@ -153,7 +153,7 @@ func (ge *GameEngine) runRound(queueIndex int) {
 
 	// Pick random word
 	secretWord := WordsPool[rand.Intn(len(WordsPool))]
-	
+
 	// Create word hint
 	hintRunes := []rune(secretWord)
 	hintStr := ""
@@ -407,14 +407,14 @@ func (ge *GameEngine) finishGame() {
 			member.Presence = "ONLINE"
 		}
 		// Reset statuses
-		match.LobbyA.Status = "matched"
-		match.LobbyB.Status = "matched"
+		match.LobbyA.Status = "MATCHED"
+		match.LobbyB.Status = "MATCHED"
 	}
 	ge.Hub.mu.Unlock()
 
 	// Broadcast match restore and transition back to meeting layout
 	ge.broadcastToMatch("GAME_END", map[string]interface{}{})
-	
+
 	// Update state in hub
 	ge.Hub.mu.Lock()
 	if matchExists {
@@ -451,7 +451,7 @@ func (ge *GameEngine) broadcastDrawStart(drawerID, secretWord, wordHint string) 
 		if !isDrawer {
 			word = ""
 		}
-		
+
 		client.Send(map[string]interface{}{
 			"event": "DRAW_START",
 			"payload": map[string]interface{}{
@@ -489,7 +489,7 @@ func (ge *GameEngine) broadcastStateUpdate() {
 		if client.ID != state.CurrentDrawerID {
 			clientState.CurrentWord = ""
 		}
-		
+
 		client.Send(map[string]interface{}{
 			"event":   "GAME_STATE_UPDATE",
 			"payload": clientState,
