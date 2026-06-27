@@ -196,12 +196,27 @@ function FunVideoContent() {
                     });
                 }
             }
+
+            // Connect WebRTC for the Lobby using frameId
+            connectWebRTC(payload.frameId);
         };
 
         // ── FRAME_JOINED: server confirms someone joined ──────────────────────
         const onFrameJoined = (payload: any) => {
             const store = useCallStore.getState();
-            const local: Participant = {
+            
+            const members = payload.members.map((m: any) => ({
+                id: m.id || m.userId,
+                stream: (m.id || m.userId) === payload.joinedUserId ? localStreamRef.current : null,
+                name: m.name ?? m.username ?? 'User',
+                isMuted: m.isMuted ?? false,
+                isCameraOff: m.isCameraOff ?? false,
+                isOwner: m.isOwner ?? false,
+                presence: m.presence ?? 'ONLINE',
+                joinOrder: m.joinOrder ?? 1,
+            }));
+
+            const local = members.find((m: any) => m.id === payload.joinedUserId) || {
                 id: payload.joinedUserId,
                 stream: localStreamRef.current,
                 name: store.localUser?.name ?? 'You',
@@ -211,13 +226,12 @@ function FunVideoContent() {
                 presence: 'ONLINE',
                 joinOrder: 2,
             };
+
             store.setLocalUser(local);
             store.setFsmState('FRAME');
             store.setFrameOwnerId(payload.ownerId);
-            useCallStore.setState({ frameId: payload.frameId, inviteToken: null });
-            if (store.leftParticipants.length === 0) {
-                useCallStore.setState({ leftParticipants: [local] });
-            }
+            useCallStore.setState({ frameId: payload.frameId, inviteToken: null, leftParticipants: members });
+            
             sessionStorage.setItem('funfram_session', JSON.stringify({
                 userId: payload.joinedUserId,
                 username: local.name,
@@ -231,24 +245,26 @@ function FunVideoContent() {
                     ...local,
                     stream: localStreamRef.current,
                 });
-                if (store.leftParticipants.length > 0) {
-                    useCallStore.setState({
-                        leftParticipants: store.leftParticipants.map(p =>
-                            p.id === local.id ? { ...p, stream: localStreamRef.current } : p
-                        )
-                    });
-                }
+                useCallStore.setState((state) => ({
+                    leftParticipants: state.leftParticipants.map(p =>
+                        p.id === local.id ? { ...p, stream: localStreamRef.current } : p
+                    )
+                }));
             }
+
+            // Connect WebRTC for the Lobby using frameId
+            connectWebRTC(payload.frameId);
         };
 
         // ── PLAYER_JOIN: a peer joined our lobby ─────────────────────────────
         const onPlayerJoin = (payload: any) => {
             const p = payload.participant;
             if (!p) return;
+            const participantName = p.name ?? p.username ?? 'Seseorang';
             const participant: Participant = {
                 id: p.id,
                 stream: null,
-                name: p.name ?? p.username ?? 'Friend',
+                name: participantName,
                 isMuted: p.isMuted ?? false,
                 isCameraOff: p.isCameraOff ?? false,
                 isOwner: p.isOwner ?? false,
@@ -256,32 +272,53 @@ function FunVideoContent() {
                 joinOrder: p.joinOrder ?? 2,
             };
             useCallStore.getState().addParticipant('left', participant);
+            
+            // Add system notification to chat
+            useCallStore.setState((state) => ({
+                generalChat: [...state.generalChat, {
+                    id: Date.now().toString(),
+                    senderId: 'system',
+                    senderName: 'System',
+                    text: `${participantName} bergabung dalam frame`,
+                    side: 'left',
+                    timestamp: new Date().toISOString()
+                }]
+            }));
         };
 
-        // ── MATCH_FOUND: matched with another frame ───────────────────────────
-        const onMatchFound = (payload: any) => {
+        const connectWebRTC = (roomId: string) => {
+            const webrtc = WebRtcService.getInstance();
+            const webrtcUrl = process.env.NEXT_PUBLIC_WS_WEBRTC_URL || 'ws://localhost:5002';
             const store = useCallStore.getState();
-            store.setSession(payload);
-            useCallStore.setState({ generalChat: [] });
-        // Initialize WebRTC when match is found
-        const webrtc = WebRtcService.getInstance();
-        const webrtcUrl = process.env.NEXT_PUBLIC_WS_WEBRTC_URL || 'ws://localhost:5002';
-        webrtc.setLocalStream(localStreamRef.current);
-        webrtc.onRemoteStream((participantId, stream) => {
-            const store = useCallStore.getState();
-            // Update existing participant in rightParticipants instead of adding new one
-            const existingParticipant = store.rightParticipants.find(p => p.id === participantId);
-            if (existingParticipant) {
-                // Update stream for existing participant
-                useCallStore.setState({
-                    rightParticipants: store.rightParticipants.map(p =>
-                        p.id === participantId ? { ...p, stream } : p
-                    )
-                });
-            } else {
-                // Fallback: add participant if not found (should not happen normally)
-                console.warn('[WebRTC] Participant not found in rightParticipants, adding:', participantId);
-                store.addParticipant('right', {
+            
+            // Disconnect from previous room if any
+            webrtc.disconnectAll();
+            
+            webrtc.setLocalStream(localStreamRef.current);
+            webrtc.onRemoteStream((participantId, stream) => {
+                const currentStore = useCallStore.getState();
+                const leftIndex = currentStore.leftParticipants.findIndex(p => p.id === participantId);
+                if (leftIndex !== -1) {
+                    useCallStore.setState({
+                        leftParticipants: currentStore.leftParticipants.map(p =>
+                            p.id === participantId ? { ...p, stream } : p
+                        )
+                    });
+                    return;
+                }
+
+                const rightIndex = currentStore.rightParticipants.findIndex(p => p.id === participantId);
+                if (rightIndex !== -1) {
+                    useCallStore.setState({
+                        rightParticipants: currentStore.rightParticipants.map(p =>
+                            p.id === participantId ? { ...p, stream } : p
+                        )
+                    });
+                    return;
+                }
+
+                console.warn('[WebRTC] Participant not found in any list, adding to right:', participantId);
+                currentStore.addParticipant('right', {
                     id: participantId,
                     stream: stream,
                     name: 'Remote User',
@@ -289,15 +326,23 @@ function FunVideoContent() {
                     isCameraOff: false,
                     isOwner: false,
                     presence: 'ONLINE',
-                    joinOrder: 1,
+                    joinOrder: 99,
                 });
-            }
-        });
-        webrtc.connectToSignalingServer(webrtcUrl).then(() => {
-            webrtc.joinRoom(payload.sessionId);
-        }).catch(err => {
-            console.error('WebRTC connection failed:', err);
-        });
+            });
+
+            webrtc.connectToSignalingServer(webrtcUrl).then(() => {
+                webrtc.joinRoom(roomId, store.localUser?.id || '');
+            }).catch(err => {
+                console.error('WebRTC connection failed:', err);
+            });
+        };
+
+        // ── MATCH_FOUND: matched with another frame ───────────────────────────
+        const onMatchFound = (payload: any) => {
+            const store = useCallStore.getState();
+            store.setSession(payload);
+            useCallStore.setState({ generalChat: [] });
+            connectWebRTC(payload.sessionId);
 
         };
 
@@ -306,9 +351,21 @@ function FunVideoContent() {
             useCallStore.getState().handleOpponentLeft({});
         };
 
-        // ── GAME_INVITE_RECEIVED ──────────────────────────────────────────────
         const onPlayerLeft = (payload: any) => {
-            useCallStore.getState().handleOpponentLeft(payload);
+            const store = useCallStore.getState();
+            const userId = payload.userId;
+            if (!userId) return;
+
+            const isLeft = store.leftParticipants.some(p => p.id === userId);
+            const isRight = store.rightParticipants.some(p => p.id === userId);
+
+            if (isLeft) {
+                store.removeParticipant('left', userId);
+            } else if (isRight) {
+                store.removeParticipant('right', userId);
+            }
+
+            WebRtcService.getInstance().disconnectPeer(userId);
         };
 
         const onDeviceStateChange = (payload: any) => {
@@ -517,7 +574,6 @@ function FunVideoContent() {
             const api = ApiService.getInstance();
             const verification = await api.verifyInviteLink(frameId, sessionId, expire, nonce, invite);
             if (verification.isValid) {
-                ws.sendWhenOpen('FRAME_JOIN', { frameId, inviteToken: invite, username: confirmedUsername });
                 ws.sendWhenOpen('PLAYER_JOIN', { frameId, username: confirmedUsername });
             } else {
                 alert('Invitation link is invalid or has expired. Creating a new frame lobby instead.');
@@ -539,18 +595,32 @@ function FunVideoContent() {
                 userId: store.localUser?.id,
             });
         }
+
+        const newLocalUser = store.localUser ? { ...store.localUser, isOwner: true } : null;
+
         // Return to lobby (FRAME state) instead of HOME
         useCallStore.setState({
             sessionId: null,
             rightParticipants: [],
+            leftParticipants: newLocalUser ? [newLocalUser] : [],
+            localUser: newLocalUser,
             fsmState: 'FRAME',
             matchmakingState: 'Waiting',
             gameState: null,
             gameInvite: null,
             generalChat: [],
+            frameOwnerId: newLocalUser?.id,
         });
+
+        // Clear query params so refresh doesn't rejoin the old frame
+        window.history.replaceState({}, '', '/funvideo');
+
+        // Request a new frame from the backend so we get a valid frameId
+        if (newLocalUser) {
+            WebSocketService.getInstance().sendEvent('FRAME_CREATE', { username: newLocalUser.name });
+        }
+
         // Don't stop media - keep camera active in lobby
-        // Don't reset - keep frameId and leftParticipants
         sessionStorage.removeItem('funfram_autostart');
     };
 
@@ -576,6 +646,16 @@ function FunVideoContent() {
     const handleCam = async () => {
         if (!videoTrackRef.current) {
             await startCamera();
+            const store = useCallStore.getState();
+            if (store.localUser?.id) {
+                store.toggleCamera(store.localUser.id, false);
+                WebSocketService.getInstance().sendEvent('DEVICE_STATE_CHANGE', {
+                    sessionId: store.sessionId,
+                    userId: store.localUser.id,
+                    cameraEnabled: true,
+                    microphoneEnabled: !store.localUser.isMuted,
+                });
+            }
             return;
         }
 

@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/joho/godotenv"
@@ -54,12 +55,16 @@ func GetOrCreateUser(username string) (string, error) {
 	ctx := context.Background()
 	var userID string
 
-	// Upsert: on conflict (username) do nothing, then select the id.
+	// Since we need every connection to be unique to avoid overwriting websocket clients,
+	// we will append a short random string to the username if it conflicts,
+	// or we can just always make it unique.
+	uniqueUsername := fmt.Sprintf("%s-%d", username, time.Now().UnixNano()%10000)
+
 	err := db.QueryRow(ctx,
 		`INSERT INTO users (username) VALUES ($1)
 		 ON CONFLICT (username) DO UPDATE SET username = EXCLUDED.username
 		 RETURNING id`,
-		username,
+		uniqueUsername,
 	).Scan(&userID)
 
 	if err != nil {

@@ -83,7 +83,7 @@ export default function Navigation({
       <div className="navigation-overlay">
         <div className="navigation-content">
           {/* Start/Next Frame Button - Owner Only Control */}
-          {(fsmState === 'FRAME' || fsmState === 'SEARCHING' || fsmState === 'MATCHED') && (
+          {isOwner && (fsmState === 'FRAME' || fsmState === 'SEARCHING' || fsmState === 'MATCHED') && (
             <NextFrameButton
               onClick={handleNextClick}
               disabled={nextButtonDisabled}
@@ -92,7 +92,7 @@ export default function Navigation({
           )}
 
           {/* Game Trigger Button - Matched state, Owner Only Control */}
-          {showGameButton && (
+          {isOwner && showGameButton && (
             <GameButton
               onClick={() => setShowGameModal(true)}
               disabled={gameButtonDisabled}

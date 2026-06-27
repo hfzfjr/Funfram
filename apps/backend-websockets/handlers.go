@@ -238,7 +238,6 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 
 			if db != nil {
 				var err error
-				// Upsert: returns existing UUID or creates a new one. No duplicate error.
 				dbUserID, err = GetOrCreateUser(payload.Username)
 				if err != nil {
 					fmt.Printf("Error getting/creating user: %v\n", err)
@@ -302,7 +301,6 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 			var dbUserID string
 			if db != nil {
 				var err error
-				// Upsert: idempotent, returns UUID.
 				dbUserID, err = GetOrCreateUser(payload.Username)
 				if err != nil {
 					fmt.Printf("Error getting/creating user: %v\n", err)
@@ -310,6 +308,11 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 				}
 			} else {
 				dbUserID = generateTempID()
+			}
+
+			if db != nil {
+				_ = UpsertUserPresence(dbUserID, "ONLINE", "")
+				_ = UpsertUserDeviceState(dbUserID, "", true, true)
 			}
 
 			if db != nil {
@@ -379,6 +382,10 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 			hub.AddToMatchmaking(payload.FrameID)
 
 		case "FRAME_NEXT":
+			if !client.IsLobbyOwner {
+				sendError(ws, "Only the Host can perform Next Frame")
+				continue
+			}
 			if time.Since(client.LastNextClick) < 2*time.Second {
 				sendError(ws, "Rate limit active. Please wait.")
 				continue
@@ -386,28 +393,20 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 			client.LastNextClick = time.Now()
 
 			activeMatchID, otherLobbyID := cleanupMatchForLobby(hub, client.LobbyID)
-			if db != nil && client.ID != "" {
-				_ = UpsertUserPresence(client.ID, "MATCHING", activeMatchID)
-			}
-
+			
+			// Broadcast MATCH_LEFT so both sides know the match ended (without removing players from their own lobbies)
+			hub.broadcastEventToLobby(client.LobbyID, "MATCH_LEFT", map[string]interface{}{})
 			hub.broadcastEventToLobby(client.LobbyID, "PRESENCE_UPDATE", map[string]interface{}{
 				"frameId":  client.LobbyID,
 				"presence": "MATCHING",
 			})
-			hub.broadcastEventToLobby(client.LobbyID, "PLAYER_LEFT", map[string]interface{}{
-				"userId":    client.ID,
-				"frameId":   client.LobbyID,
-				"sessionId": activeMatchID,
-				"reason":    "FRAME_NEXT",
-			})
+			
+			if db != nil && client.ID != "" {
+				_ = UpsertUserPresence(client.ID, "MATCHING", activeMatchID)
+			}
+
 			if otherLobbyID != "" {
 				hub.broadcastEventToLobby(otherLobbyID, "MATCH_LEFT", map[string]interface{}{})
-				hub.broadcastEventToLobby(otherLobbyID, "PLAYER_LEFT", map[string]interface{}{
-					"userId":    client.ID,
-					"frameId":   client.LobbyID,
-					"sessionId": activeMatchID,
-					"reason":    "FRAME_NEXT",
-				})
 				hub.broadcastEventToLobby(otherLobbyID, "PRESENCE_UPDATE", map[string]interface{}{
 					"frameId":  otherLobbyID,
 					"presence": "MATCHING",
@@ -428,6 +427,50 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 				continue
 			}
 
+			if !client.IsLobbyOwner {
+				// Guest is leaving
+				hub.mu.RLock()
+				var activeMatchID string
+				var partnerLobbyID string
+				for mID, match := range hub.matches {
+					if match.LobbyA.ID == client.LobbyID {
+						activeMatchID = mID
+						partnerLobbyID = match.LobbyB.ID
+						break
+					} else if match.LobbyB.ID == client.LobbyID {
+						activeMatchID = mID
+						partnerLobbyID = match.LobbyA.ID
+						break
+					}
+				}
+				hub.mu.RUnlock()
+
+				hub.LeaveLobby(client.ID)
+				
+				if db != nil && client.ID != "" {
+					_ = UpsertUserPresence(client.ID, "ONLINE", "")
+				}
+				
+				// Broadcast guest left to host's lobby
+				hub.broadcastEventToLobby(client.LobbyID, "PLAYER_LEFT", map[string]interface{}{
+					"userId":    client.ID,
+					"frameId":   client.LobbyID,
+					"sessionId": activeMatchID,
+					"reason":    "GUEST_LEAVE",
+				})
+				// Broadcast guest left to partner lobby
+				if partnerLobbyID != "" {
+					hub.broadcastEventToLobby(partnerLobbyID, "PLAYER_LEFT", map[string]interface{}{
+						"userId":    client.ID,
+						"frameId":   client.LobbyID,
+						"sessionId": activeMatchID,
+						"reason":    "GUEST_LEAVE",
+					})
+				}
+				continue
+			}
+
+			// Host is leaving -> destroy match and leave
 			activeMatchID, otherLobbyID := cleanupMatchForLobby(hub, client.LobbyID)
 			if db != nil && client.ID != "" {
 				_ = UpsertUserPresence(client.ID, "ONLINE", "")
@@ -484,6 +527,10 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 			})
 
 		case "GAME_INVITE":
+			if !client.IsLobbyOwner {
+				sendError(ws, "Only the Host can invite to games")
+				continue
+			}
 			var payload GameInvitePayload
 			if err := json.Unmarshal(msg.Payload, &payload); err != nil {
 				sendError(ws, "Invalid payload")
@@ -524,6 +571,10 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 			}
 
 		case "GAME_ACCEPT":
+			if !client.IsLobbyOwner {
+				sendError(ws, "Only the Host can accept games")
+				continue
+			}
 			var payload GameAcceptPayload
 			if err := json.Unmarshal(msg.Payload, &payload); err != nil {
 				sendError(ws, "Invalid payload")
