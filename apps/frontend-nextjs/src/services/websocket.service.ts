@@ -63,7 +63,7 @@ class WebSocketServiceClass {
       const e: any = err as any;
       const type = e.type || 'unknown';
       const url = e?.target?.url || 'unknown';
-      console.error('WebSocket error →', { type, url }, err);
+      console.warn('WebSocket error →', { type, url }, err);
       // Do NOT reconnect here – onclose will handle reconnection.
     };
 

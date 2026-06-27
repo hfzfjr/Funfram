@@ -271,9 +271,11 @@ func (h *Hub) createMatch(lobbyA, lobbyB *Lobby) {
 	matchID := fmt.Sprintf("match-%d", time.Now().UnixNano())
 
 	if db != nil {
-		_, err := CreateMatchDB(lobbyA.ID, lobbyB.ID)
+		dbMatchID, err := CreateMatchDB(lobbyA.ID, lobbyB.ID)
 		if err != nil {
 			fmt.Printf("Error creating match in DB: %v\n", err)
+		} else {
+			matchID = dbMatchID
 		}
 		UpdateLobbyStatus(lobbyA.ID, "MATCHED")
 		UpdateLobbyStatus(lobbyB.ID, "MATCHED")

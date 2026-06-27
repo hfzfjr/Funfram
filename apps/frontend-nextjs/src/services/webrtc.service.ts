@@ -5,7 +5,13 @@ export class WebRtcService {
     private onRemoteStreamCallback: ((participantId: string, stream: MediaStream) => void) | null = null;
     private signalingSocket: WebSocket | null = null;
     private currentRoomId: string | null = null;
+    private localUserId: string | null = null;
     private iceServers: RTCIceServer[] = [];
+    
+    // For Perfect Negotiation
+    private makingOffer: Map<string, boolean> = new Map();
+    private ignoreOffer: Map<string, boolean> = new Map();
+    private isSettingRemoteAnswerPending: Map<string, boolean> = new Map();
 
     private constructor() { }
 
@@ -18,15 +24,34 @@ export class WebRtcService {
 
     public setLocalStream(stream: MediaStream | null) {
         this.localStream = stream;
+        
+        // Update existing peer connections if stream changes
+        this.peerConnections.forEach((pc) => {
+            if (this.localStream) {
+                // If we have transceivers, we can replace the track
+                const senders = pc.getSenders();
+                const transceivers = pc.getTransceivers();
+                this.localStream.getTracks().forEach(track => {
+                    const sender = senders.find(s => s.track?.kind === track.kind);
+                    if (sender) {
+                        sender.replaceTrack(track);
+                    } else {
+                        const emptyTransceiver = transceivers.find(t => t.sender.track === null && t.receiver.track.kind === track.kind);
+                        if (emptyTransceiver) {
+                            emptyTransceiver.sender.replaceTrack(track);
+                        } else {
+                            pc.addTrack(track, this.localStream!);
+                        }
+                    }
+                });
+            }
+        });
     }
 
     public onRemoteStream(callback: (participantId: string, stream: MediaStream) => void) {
         this.onRemoteStreamCallback = callback;
     }
 
-    /**
-     * Connect to WebRTC signaling server
-     */
     public connectToSignalingServer(url: string): Promise<void> {
         return new Promise((resolve, reject) => {
             try {
@@ -55,25 +80,21 @@ export class WebRtcService {
         });
     }
 
-    /**
-     * Join a WebRTC room for peer-to-peer connection
-     */
-    public joinRoom(roomId: string) {
+    public joinRoom(roomId: string, userId: string) {
         if (!this.signalingSocket || this.signalingSocket.readyState !== WebSocket.OPEN) {
             console.error('[WebRtcService] Signaling socket not connected');
             return;
         }
 
         this.currentRoomId = roomId;
+        this.localUserId = userId;
         this.signalingSocket.send(JSON.stringify({
             type: 'join',
             roomID: roomId,
+            userId: userId,
         }));
     }
 
-    /**
-     * Handle signaling messages from server
-     */
     private handleSignalingMessage(data: any) {
         console.log('[WebRtcService] Received signaling message:', data.type);
 
@@ -85,7 +106,9 @@ export class WebRtcService {
 
             case 'user-joined':
                 console.log('[WebRtcService] User joined:', data.userId);
-                // Start peer connection when remote user joins
+                // When a new user joins, if our ID is 'greater', we act as polite, otherwise impolite.
+                // We'll let both sides initiate Perfect Negotiation by having BOTH call createPeerConnection
+                // but the polite peer logic resolves glare.
                 this.createPeerConnection(data.userId, true);
                 break;
 
@@ -111,10 +134,19 @@ export class WebRtcService {
         }
     }
 
-    /**
-     * Create peer connection with remote participant
-     */
-    private async createPeerConnection(participantId: string, isInitiator: boolean): Promise<void> {
+    private getPeerConnection(participantId: string): RTCPeerConnection {
+        let pc = this.peerConnections.get(participantId);
+        if (!pc) {
+            pc = this.createPeerConnection(participantId, false);
+        }
+        return pc;
+    }
+
+    private createPeerConnection(participantId: string, isInitiator: boolean): RTCPeerConnection {
+        if (this.peerConnections.has(participantId)) {
+            return this.peerConnections.get(participantId)!;
+        }
+
         console.log(`[WebRtcService] Creating peer connection with: ${participantId}`);
 
         const config: RTCConfiguration = {
@@ -124,125 +156,148 @@ export class WebRtcService {
         };
 
         const pc = new RTCPeerConnection(config);
+        
+        // Perfect Negotiation states
+        this.makingOffer.set(participantId, false);
+        this.ignoreOffer.set(participantId, false);
+        this.isSettingRemoteAnswerPending.set(participantId, false);
 
-        // Add local tracks
+        // Add local tracks via transceivers for robust negotiation
         if (this.localStream) {
             this.localStream.getTracks().forEach(track => {
-                pc.addTrack(track, this.localStream!);
+                pc.addTransceiver(track, { direction: 'sendrecv', streams: [this.localStream!] });
             });
+        } else {
+            pc.addTransceiver('video', { direction: 'sendrecv' });
+            pc.addTransceiver('audio', { direction: 'sendrecv' });
         }
 
-        // Handle remote stream
         pc.ontrack = (event) => {
             if (event.streams && event.streams[0]) {
                 console.log(`[WebRtcService] Remote stream received from: ${participantId}`);
                 if (this.onRemoteStreamCallback) {
                     this.onRemoteStreamCallback(participantId, event.streams[0]);
                 }
+            } else {
+                const inboundStream = new MediaStream([event.track]);
+                if (this.onRemoteStreamCallback) {
+                    this.onRemoteStreamCallback(participantId, inboundStream);
+                }
             }
         };
 
-        // Handle ICE candidates
         pc.onicecandidate = (event) => {
             if (event.candidate) {
                 this.sendSignalingMessage({
                     type: 'ice-candidate',
                     candidate: event.candidate,
+                    targetId: participantId,
                 });
             }
         };
 
-        // Handle connection state changes
+        // Perfect Negotiation logic on negotiationneeded
+        pc.onnegotiationneeded = async () => {
+            try {
+                this.makingOffer.set(participantId, true);
+                const offer = await pc.createOffer();
+                if (pc.signalingState !== "stable") return; // avoid race conditions
+                await pc.setLocalDescription(offer);
+                this.sendSignalingMessage({
+                    type: 'offer',
+                    offer: pc.localDescription,
+                    targetId: participantId,
+                });
+            } catch (err) {
+                console.error('[WebRtcService] Error during negotiation:', err);
+            } finally {
+                this.makingOffer.set(participantId, false);
+            }
+        };
+
         pc.onconnectionstatechange = () => {
             console.log(`[WebRtcService] Connection state with ${participantId}:`, pc.connectionState);
+            if (pc.connectionState === 'failed') {
+                // Trigger ICE restart
+                pc.restartIce();
+            }
         };
 
         this.peerConnections.set(participantId, pc);
-
-        // If initiator, create and send offer
-        if (isInitiator) {
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            this.sendSignalingMessage({
-                type: 'offer',
-                offer: offer,
-            });
-        }
+        return pc;
     }
 
-    /**
-     * Handle WebRTC offer from remote peer
-     */
     private async handleOffer(offer: RTCSessionDescriptionInit, sender: string) {
         console.log(`[WebRtcService] Handling offer from: ${sender}`);
+        const pc = this.getPeerConnection(sender);
 
-        let pc = this.peerConnections.get(sender);
-        if (!pc) {
-            await this.createPeerConnection(sender, false);
-            pc = this.peerConnections.get(sender);
+        const polite = (this.localUserId || '') < sender;
+        const offerCollision = this.makingOffer.get(sender) || pc.signalingState !== 'stable';
+
+        this.ignoreOffer.set(sender, !polite && offerCollision);
+        if (this.ignoreOffer.get(sender)) {
+            console.log(`[WebRtcService] Ignoring offer from ${sender} (collision, impolite)`);
+            return;
         }
 
-        if (pc) {
+        try {
             await pc.setRemoteDescription(new RTCSessionDescription(offer));
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
             this.sendSignalingMessage({
                 type: 'answer',
-                answer: answer,
+                answer: pc.localDescription,
+                targetId: sender,
             });
+        } catch (err) {
+            console.error('[WebRtcService] Error handling offer:', err);
         }
     }
 
-    /**
-     * Handle WebRTC answer from remote peer
-     */
     private async handleAnswer(answer: RTCSessionDescriptionInit, sender: string) {
         console.log(`[WebRtcService] Handling answer from: ${sender}`);
-
         const pc = this.peerConnections.get(sender);
         if (pc) {
-            await pc.setRemoteDescription(new RTCSessionDescription(answer));
+            try {
+                await pc.setRemoteDescription(new RTCSessionDescription(answer));
+            } catch (err) {
+                console.error('[WebRtcService] Error handling answer:', err);
+            }
         }
     }
 
-    /**
-     * Handle ICE candidate from remote peer
-     */
     private async handleIceCandidate(candidate: RTCIceCandidateInit, sender: string) {
-        console.log(`[WebRtcService] Handling ICE candidate from: ${sender}`);
-
         const pc = this.peerConnections.get(sender);
         if (pc) {
-            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            try {
+                await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (err) {
+                if (!this.ignoreOffer.get(sender)) {
+                    console.error('[WebRtcService] Error adding ice candidate:', err);
+                }
+            }
         }
     }
 
-    /**
-     * Send message to signaling server
-     */
     private sendSignalingMessage(data: any) {
         if (this.signalingSocket && this.signalingSocket.readyState === WebSocket.OPEN) {
             this.signalingSocket.send(JSON.stringify(data));
         }
     }
 
-    /**
-     * Disconnects and releases RTCPeerConnection with a peer.
-     */
     public disconnectPeer(participantId: string): void {
         const pc = this.peerConnections.get(participantId);
         if (pc) {
             pc.close();
             this.peerConnections.delete(participantId);
+            this.makingOffer.delete(participantId);
+            this.ignoreOffer.delete(participantId);
+            this.isSettingRemoteAnswerPending.delete(participantId);
             console.log(`[WebRtcService] Closed peer connection with: ${participantId}`);
         }
     }
 
-    /**
-     * Clears all Peer connections (leaves session).
-     */
     public disconnectAll(): void {
-        // Send leave message to server
         if (this.currentRoomId) {
             this.sendSignalingMessage({ type: 'leave' });
         }
@@ -252,6 +307,9 @@ export class WebRtcService {
             console.log(`[WebRtcService] Disconnected ${id}`);
         });
         this.peerConnections.clear();
+        this.makingOffer.clear();
+        this.ignoreOffer.clear();
+        this.isSettingRemoteAnswerPending.clear();
         this.currentRoomId = null;
 
         if (this.signalingSocket) {

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { WebSocketService } from '@/services/websocket.service';
+import { WebRtcService } from '@/services/webrtc.service';
 import { Participant, FrameSide, AppFsmState, MatchmakingState } from '@/types/participant';
 import { GuessDrawingState, CanvasEvent, GuessEvent } from '@/types/game';
 
@@ -234,19 +235,27 @@ export const useCallStore = create<CallStore>((set, get) => ({
             return;
         }
 
-        // Preserve local user's stream when setting session
         const state = get();
-            const localUserId = state.localUser?.id;
-            const localStream = state.localUser?.stream;
+        const localUserId = state.localUser?.id;
+        const localStream = state.localUser?.stream;
+
+        let localFrame = session.frameA;
+        let remoteFrame = session.frameB;
+
+        // Check if local user is in frameB
+        if (localUserId && session.frameB.members.some(p => p.id === localUserId)) {
+            localFrame = session.frameB;
+            remoteFrame = session.frameA;
+        }
 
         // Update leftParticipants with preserved stream for local user
-        const updatedLeftParticipants = session.frameA.members.map(p => {
+        const updatedLeftParticipants = localFrame.members.map(p => {
             if (p.id === localUserId && localStream) {
                 return { ...p, stream: localStream };
             }
             return p;
         });
-        const updatedRightParticipants = sortParticipants(session.frameB.members);
+        const updatedRightParticipants = sortParticipants(remoteFrame.members);
 
         // Update localUser if it's in the new leftParticipants
         const updatedLocalUser = updatedLeftParticipants.find(p => p.id === localUserId) || state.localUser;
@@ -254,7 +263,7 @@ export const useCallStore = create<CallStore>((set, get) => ({
         // Set state to MATCHED
         set({
             sessionId: session.sessionId,
-            frameOwnerId: session.frameA.ownerId,
+            frameOwnerId: localFrame.ownerId,
             leftParticipants: sortParticipants(updatedLeftParticipants),
             rightParticipants: updatedRightParticipants,
             fsmState: 'MATCHED',
@@ -270,6 +279,8 @@ export const useCallStore = create<CallStore>((set, get) => ({
             const nextLeft = leavingId && shouldRemoveLocal
                 ? state.leftParticipants.filter(p => p.id !== leavingId)
                 : state.leftParticipants;
+
+            WebRtcService.getInstance().disconnectAll();
 
             return {
                 sessionId: null,
@@ -298,6 +309,7 @@ export const useCallStore = create<CallStore>((set, get) => ({
         }
         // Send next frame request to backend
         WebSocketService.getInstance().sendEvent('FRAME_NEXT', {});
+        WebRtcService.getInstance().disconnectAll();
         set({
             lastNextFrameClick: now,
             fsmState: 'SEARCHING',

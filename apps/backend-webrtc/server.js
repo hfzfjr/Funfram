@@ -30,7 +30,7 @@ if (process.env.TURN_SERVER_URL && process.env.TURN_USERNAME && process.env.TURN
 
 wss.on('connection', (ws) => {
     console.log('Klien WebRTC baru terhubung');
-    ws.id = Math.random().toString(36).substr(2, 9);
+    ws.id = Math.random().toString(36).substr(2, 9); // Fallback ID
 
     ws.on('message', (message) => {
         try {
@@ -41,6 +41,9 @@ wss.on('connection', (ws) => {
                 case 'join':
                     const roomID = data.roomID;
                     ws.roomID = roomID;
+                    if (data.userId) {
+                        ws.id = data.userId;
+                    }
 
                     if (!rooms[roomID]) {
                         rooms[roomID] = [];
@@ -63,31 +66,55 @@ wss.on('connection', (ws) => {
 
                 case 'offer':
                     if (ws.roomID && rooms[ws.roomID]) {
-                        broadcastToRoom(ws.roomID, {
-                            type: 'offer',
-                            offer: data.offer,
-                            sender: ws.id,
-                        }, ws);
+                        if (data.targetId) {
+                            sendToUser(ws.roomID, data.targetId, {
+                                type: 'offer',
+                                offer: data.offer,
+                                sender: ws.id,
+                            });
+                        } else {
+                            broadcastToRoom(ws.roomID, {
+                                type: 'offer',
+                                offer: data.offer,
+                                sender: ws.id,
+                            }, ws);
+                        }
                     }
                     break;
 
                 case 'answer':
                     if (ws.roomID && rooms[ws.roomID]) {
-                        broadcastToRoom(ws.roomID, {
-                            type: 'answer',
-                            answer: data.answer,
-                            sender: ws.id,
-                        }, ws);
+                        if (data.targetId) {
+                            sendToUser(ws.roomID, data.targetId, {
+                                type: 'answer',
+                                answer: data.answer,
+                                sender: ws.id,
+                            });
+                        } else {
+                            broadcastToRoom(ws.roomID, {
+                                type: 'answer',
+                                answer: data.answer,
+                                sender: ws.id,
+                            }, ws);
+                        }
                     }
                     break;
 
                 case 'ice-candidate':
                     if (ws.roomID && rooms[ws.roomID]) {
-                        broadcastToRoom(ws.roomID, {
-                            type: 'ice-candidate',
-                            candidate: data.candidate,
-                            sender: ws.id,
-                        }, ws);
+                        if (data.targetId) {
+                            sendToUser(ws.roomID, data.targetId, {
+                                type: 'ice-candidate',
+                                candidate: data.candidate,
+                                sender: ws.id,
+                            });
+                        } else {
+                            broadcastToRoom(ws.roomID, {
+                                type: 'ice-candidate',
+                                candidate: data.candidate,
+                                sender: ws.id,
+                            }, ws);
+                        }
                     }
                     break;
 
@@ -121,6 +148,14 @@ function broadcastToRoom(roomID, message, excludeWs = null) {
             client.send(JSON.stringify(message));
         }
     });
+}
+
+function sendToUser(roomID, targetId, message) {
+    if (!rooms[roomID]) return;
+    const target = rooms[roomID].find(client => client.id === targetId);
+    if (target && target.readyState === WebSocket.OPEN) {
+        target.send(JSON.stringify(message));
+    }
 }
 
 function handleDisconnect(ws) {
