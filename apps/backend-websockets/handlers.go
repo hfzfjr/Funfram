@@ -126,6 +126,7 @@ func cleanupMatchForLobby(hub *Hub, lobbyID string) (string, string) {
 
 		if currentLobby, exists := hub.lobbies[lobbyID]; exists {
 			currentLobby.Status = "WAITING"
+			currentLobby.LastMatchLobbyID = otherLobbyID
 			for _, member := range currentLobby.Members {
 				member.Presence = "MATCHING"
 			}
@@ -133,6 +134,7 @@ func cleanupMatchForLobby(hub *Hub, lobbyID string) (string, string) {
 
 		if otherLobbyState, exists := hub.lobbies[otherLobbyID]; exists {
 			otherLobbyState.Status = "WAITING"
+			otherLobbyState.LastMatchLobbyID = lobbyID
 			for _, member := range otherLobbyState.Members {
 				member.Presence = "MATCHING"
 			}
@@ -171,32 +173,75 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 		JoinOrder: 0,
 	}
 
+	// Set up ping/pong for detecting offline ghost users
+	pongWait := 15 * time.Second
+	pingPeriod := 10 * time.Second
+	ws.SetReadDeadline(time.Now().Add(pongWait))
+	ws.SetPongHandler(func(string) error { ws.SetReadDeadline(time.Now().Add(pongWait)); return nil })
+
+	go func() {
+		ticker := time.NewTicker(pingPeriod)
+		defer ticker.Stop()
+		for range ticker.C {
+			client.WriteMu.Lock()
+			err := ws.WriteMessage(websocket.PingMessage, nil)
+			client.WriteMu.Unlock()
+			if err != nil {
+				return
+			}
+		}
+	}()
+
 	fmt.Printf("✅ New WebSocket connection: %s from %s\n", userID, ws.RemoteAddr())
 
 	defer func() {
 		lobbyID := client.LobbyID
 		userID := client.ID
-		activeMatchID, otherLobbyID := cleanupMatchForLobby(hub, lobbyID)
-		if otherLobbyID != "" {
+		
+		if client.IsLobbyOwner {
+			activeMatchID, otherLobbyID := cleanupMatchForLobby(hub, lobbyID)
+			if otherLobbyID != "" {
+				hub.broadcastEventToLobby(otherLobbyID, "PLAYER_LEFT", map[string]interface{}{
+					"userId":    userID,
+					"frameId":   lobbyID,
+					"sessionId": activeMatchID,
+					"reason":    "DISCONNECT",
+				})
+				hub.broadcastEventToLobby(otherLobbyID, "MATCH_LEFT", map[string]interface{}{})
+				hub.broadcastEventToLobby(otherLobbyID, "PRESENCE_UPDATE", map[string]interface{}{
+					"frameId":  otherLobbyID,
+					"presence": "MATCHING",
+				})
+				hub.AddToMatchmaking(otherLobbyID)
+			}
+			
+			hub.mu.RLock()
+			lobby, exists := hub.lobbies[lobbyID]
+			var guests []*Client
+			if exists {
+				for guestID, guestClient := range lobby.Members {
+					if guestID != userID {
+						guests = append(guests, guestClient)
+					}
+				}
+			}
+			hub.mu.RUnlock()
+
+			for _, guestClient := range guests {
+				sendResponse(guestClient.Conn, map[string]interface{}{
+					"event": "FRAME_DESTROYED",
+					"payload": map[string]interface{}{
+						"frameId": lobbyID,
+					},
+				})
+				hub.LeaveLobby(guestClient.ID)
+			}
+		} else if lobbyID != "" {
 			hub.broadcastEventToLobby(lobbyID, "PLAYER_LEFT", map[string]interface{}{
 				"userId":    userID,
 				"frameId":   lobbyID,
-				"sessionId": activeMatchID,
 				"reason":    "DISCONNECT",
 			})
-			hub.broadcastEventToLobby(lobbyID, "MATCH_LEFT", map[string]interface{}{})
-			hub.broadcastEventToLobby(otherLobbyID, "MATCH_LEFT", map[string]interface{}{})
-			hub.broadcastEventToLobby(otherLobbyID, "PLAYER_LEFT", map[string]interface{}{
-				"userId":    userID,
-				"frameId":   lobbyID,
-				"sessionId": activeMatchID,
-				"reason":    "DISCONNECT",
-			})
-			hub.broadcastEventToLobby(otherLobbyID, "PRESENCE_UPDATE", map[string]interface{}{
-				"frameId":  otherLobbyID,
-				"presence": "MATCHING",
-			})
-			hub.AddToMatchmaking(otherLobbyID)
 		}
 
 		hub.LeaveLobby(userID)
@@ -309,6 +354,15 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 			} else {
 				dbUserID = generateTempID()
 			}
+
+			// Prevent session overwrite if the same username is used (e.g. testing)
+			hub.mu.RLock()
+			if lobby, exists := hub.lobbies[payload.FrameID]; exists {
+				if _, alreadyJoined := lobby.Members[dbUserID]; alreadyJoined {
+					dbUserID = dbUserID + "-" + generateTempID()[:4]
+				}
+			}
+			hub.mu.RUnlock()
 
 			if db != nil {
 				_ = UpsertUserPresence(dbUserID, "ONLINE", "")
@@ -489,6 +543,30 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 					"presence": "MATCHING",
 				})
 				hub.AddToMatchmaking(otherLobbyID)
+
+				hub.broadcastEventToLobby(client.LobbyID, "MATCH_LEFT", map[string]interface{}{})
+			}
+
+			hub.mu.RLock()
+			lobby, exists := hub.lobbies[client.LobbyID]
+			var guests []*Client
+			if exists {
+				for guestID, guestClient := range lobby.Members {
+					if guestID != client.ID {
+						guests = append(guests, guestClient)
+					}
+				}
+			}
+			hub.mu.RUnlock()
+
+			for _, guestClient := range guests {
+				sendResponse(guestClient.Conn, map[string]interface{}{
+					"event": "FRAME_DESTROYED",
+					"payload": map[string]interface{}{
+						"frameId": client.LobbyID,
+					},
+				})
+				hub.LeaveLobby(guestClient.ID)
 			}
 
 			hub.LeaveLobby(client.ID)

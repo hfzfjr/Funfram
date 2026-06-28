@@ -28,7 +28,7 @@ export default function InviteFriendsOverlay({ onClose }: InviteFriendsOverlayPr
     const copyLink = () => {
         if (!inviteLink) return;
         navigator.clipboard.writeText(inviteLink);
-        alert('Secure invite link copied to clipboard!');
+        useCallStore.getState().showCustomAlert('Tautan undangan berhasil disalin!', 'success');
     };
 
 
