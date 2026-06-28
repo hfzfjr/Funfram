@@ -12,6 +12,8 @@ export class WebRtcService {
     private makingOffer: Map<string, boolean> = new Map();
     private ignoreOffer: Map<string, boolean> = new Map();
     private isSettingRemoteAnswerPending: Map<string, boolean> = new Map();
+    private pendingCandidates: Map<string, RTCIceCandidateInit[]> = new Map();
+    private remoteStreams: Map<string, MediaStream> = new Map();
 
     private constructor() { }
 
@@ -147,7 +149,8 @@ export class WebRtcService {
             return this.peerConnections.get(participantId)!;
         }
 
-        console.log(`[WebRtcService] Creating peer connection with: ${participantId}`);
+        const timestamp = new Date().toISOString();
+        console.log(`[WebRtcService][${timestamp}] Creating peer connection with: ${participantId} - Match/Session ID: ${this.currentRoomId}`);
 
         // Selalu tambahkan STUN dan TURN gratis dari openrelay untuk berjaga-jaga jika backend gagal mengirimkan credentials yang benar
         const fallbackIceServers: RTCIceServer[] = [
@@ -203,16 +206,21 @@ export class WebRtcService {
         }
 
         pc.ontrack = (event) => {
-            if (event.streams && event.streams[0]) {
-                console.log(`[WebRtcService] Remote stream received from: ${participantId}`);
-                if (this.onRemoteStreamCallback) {
-                    this.onRemoteStreamCallback(participantId, event.streams[0]);
-                }
+            const timestamp = new Date().toISOString();
+            console.log(`[WebRtcService][${timestamp}] ontrack fired for ${participantId} - Match/Session ID: ${this.currentRoomId}, Track kind: ${event.track.kind}`);
+            
+            let stream: MediaStream;
+            if (event.streams && event.streams.length > 0) {
+                stream = event.streams[0];
             } else {
-                const inboundStream = new MediaStream([event.track]);
-                if (this.onRemoteStreamCallback) {
-                    this.onRemoteStreamCallback(participantId, inboundStream);
-                }
+                stream = this.remoteStreams.get(participantId) || new MediaStream();
+                stream.addTrack(event.track);
+                this.remoteStreams.set(participantId, stream);
+            }
+            
+            console.log(`[WebRtcService][${timestamp}] Remote stream updated from: ${participantId}`);
+            if (this.onRemoteStreamCallback) {
+                this.onRemoteStreamCallback(participantId, stream);
             }
         };
 
@@ -226,27 +234,42 @@ export class WebRtcService {
             }
         };
 
+        pc.onsignalingstatechange = () => {
+            const timestamp = new Date().toISOString();
+            console.log(`[WebRtcService][${timestamp}] Signaling state with ${participantId}: ${pc.signalingState} - Match/Session ID: ${this.currentRoomId}`);
+        };
+
+        pc.oniceconnectionstatechange = () => {
+            const timestamp = new Date().toISOString();
+            console.log(`[WebRtcService][${timestamp}] ICE connection state with ${participantId}: ${pc.iceConnectionState} - Match/Session ID: ${this.currentRoomId}`);
+        };
+
         // Perfect Negotiation logic on negotiationneeded
         pc.onnegotiationneeded = async () => {
+            const timestamp = new Date().toISOString();
+            console.log(`[WebRtcService][${timestamp}] negotiationneeded for ${participantId} - Match/Session ID: ${this.currentRoomId}, State: ${pc.signalingState}`);
             try {
                 this.makingOffer.set(participantId, true);
-                const offer = await pc.createOffer();
-                if (pc.signalingState !== "stable") return; // avoid race conditions
-                await pc.setLocalDescription(offer);
+                await pc.setLocalDescription();
+                const offer = pc.localDescription;
+                if (!offer) return;
+                
+                console.log(`[WebRtcService][${timestamp}] setLocalDescription() success for ${participantId}`);
                 this.sendSignalingMessage({
                     type: 'offer',
-                    offer: pc.localDescription,
+                    offer: offer,
                     targetId: participantId,
                 });
             } catch (err) {
-                console.error('[WebRtcService] Error during negotiation:', err);
+                console.error(`[WebRtcService][${timestamp}] Error during negotiation for ${participantId}:`, err);
             } finally {
                 this.makingOffer.set(participantId, false);
             }
         };
 
         pc.onconnectionstatechange = () => {
-            console.log(`[WebRtcService] Connection state with ${participantId}:`, pc.connectionState);
+            const timestamp = new Date().toISOString();
+            console.log(`[WebRtcService][${timestamp}] Connection state with ${participantId}: ${pc.connectionState} - Match/Session ID: ${this.currentRoomId}`);
             if (pc.connectionState === 'failed') {
                 // Trigger ICE restart
                 pc.restartIce();
@@ -258,7 +281,8 @@ export class WebRtcService {
     }
 
     private async handleOffer(offer: RTCSessionDescriptionInit, sender: string) {
-        console.log(`[WebRtcService] Handling offer from: ${sender}`);
+        const timestamp = new Date().toISOString();
+        console.log(`[WebRtcService][${timestamp}] Handling offer from: ${sender} - Match/Session ID: ${this.currentRoomId}`);
         const pc = this.getPeerConnection(sender);
 
         const polite = (this.localUserId || '') < sender;
@@ -266,45 +290,87 @@ export class WebRtcService {
 
         this.ignoreOffer.set(sender, !polite && offerCollision);
         if (this.ignoreOffer.get(sender)) {
-            console.log(`[WebRtcService] Ignoring offer from ${sender} (collision, impolite)`);
+            console.log(`[WebRtcService][${timestamp}] Ignoring offer from ${sender} (collision, impolite)`);
             return;
         }
 
         try {
+            console.log(`[WebRtcService][${timestamp}] setRemoteDescription(offer) starting for ${sender}`);
             await pc.setRemoteDescription(new RTCSessionDescription(offer));
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
+            console.log(`[WebRtcService][${timestamp}] setRemoteDescription(offer) success for ${sender}`);
+            
+            // Flush pending ICE candidates
+            await this.flushPendingIceCandidates(sender, pc);
+
+            await pc.setLocalDescription();
+            const answer = pc.localDescription;
+            if (!answer) return;
+            
+            console.log(`[WebRtcService][${timestamp}] setLocalDescription(answer) success for ${sender}`);
             this.sendSignalingMessage({
                 type: 'answer',
-                answer: pc.localDescription,
+                answer: answer,
                 targetId: sender,
             });
         } catch (err) {
-            console.error('[WebRtcService] Error handling offer:', err);
+            console.error(`[WebRtcService][${timestamp}] Error handling offer from ${sender}:`, err);
         }
     }
 
     private async handleAnswer(answer: RTCSessionDescriptionInit, sender: string) {
-        console.log(`[WebRtcService] Handling answer from: ${sender}`);
+        const timestamp = new Date().toISOString();
+        console.log(`[WebRtcService][${timestamp}] Handling answer from: ${sender} - Match/Session ID: ${this.currentRoomId}`);
         const pc = this.peerConnections.get(sender);
         if (pc) {
             try {
+                console.log(`[WebRtcService][${timestamp}] setRemoteDescription(answer) starting for ${sender}`);
                 await pc.setRemoteDescription(new RTCSessionDescription(answer));
+                console.log(`[WebRtcService][${timestamp}] setRemoteDescription(answer) success for ${sender}`);
+                
+                // Flush pending ICE candidates
+                await this.flushPendingIceCandidates(sender, pc);
             } catch (err) {
-                console.error('[WebRtcService] Error handling answer:', err);
+                console.error(`[WebRtcService][${timestamp}] Error handling answer from ${sender}:`, err);
             }
         }
     }
 
+    private async flushPendingIceCandidates(sender: string, pc: RTCPeerConnection) {
+        const pending = this.pendingCandidates.get(sender);
+        if (pending && pending.length > 0) {
+            const timestamp = new Date().toISOString();
+            console.log(`[WebRtcService][${timestamp}] Flushing ${pending.length} pending ICE candidates for ${sender}`);
+            for (const c of pending) {
+                try {
+                    await pc.addIceCandidate(new RTCIceCandidate(c));
+                } catch (err) {
+                    if (!this.ignoreOffer.get(sender)) {
+                        console.error(`[WebRtcService][${timestamp}] Error adding buffered ice candidate for ${sender}:`, err);
+                    }
+                }
+            }
+            this.pendingCandidates.delete(sender);
+        }
+    }
+
     private async handleIceCandidate(candidate: RTCIceCandidateInit, sender: string) {
+        const timestamp = new Date().toISOString();
         const pc = this.peerConnections.get(sender);
         if (pc) {
-            try {
-                await pc.addIceCandidate(new RTCIceCandidate(candidate));
-            } catch (err) {
-                if (!this.ignoreOffer.get(sender)) {
-                    console.error('[WebRtcService] Error adding ice candidate:', err);
+            if (pc.remoteDescription) {
+                try {
+                    await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                    console.log(`[WebRtcService][${timestamp}] ICE candidate added for ${sender}`);
+                } catch (err) {
+                    if (!this.ignoreOffer.get(sender)) {
+                        console.error(`[WebRtcService][${timestamp}] Error adding ice candidate for ${sender}:`, err);
+                    }
                 }
+            } else {
+                console.log(`[WebRtcService][${timestamp}] Buffering ICE candidate for ${sender} (remote description not set yet)`);
+                let pending = this.pendingCandidates.get(sender) || [];
+                pending.push(candidate);
+                this.pendingCandidates.set(sender, pending);
             }
         }
     }
@@ -316,30 +382,38 @@ export class WebRtcService {
     }
 
     public disconnectPeer(participantId: string): void {
+        const timestamp = new Date().toISOString();
         const pc = this.peerConnections.get(participantId);
         if (pc) {
+            console.log(`[WebRtcService][${timestamp}] Closing peer connection with: ${participantId} - Match/Session ID: ${this.currentRoomId}`);
             pc.close();
             this.peerConnections.delete(participantId);
             this.makingOffer.delete(participantId);
             this.ignoreOffer.delete(participantId);
             this.isSettingRemoteAnswerPending.delete(participantId);
-            console.log(`[WebRtcService] Closed peer connection with: ${participantId}`);
+            this.pendingCandidates.delete(participantId);
+            this.remoteStreams.delete(participantId);
+            console.log(`[WebRtcService][${timestamp}] Closed peer connection with: ${participantId}`);
         }
     }
 
     public disconnectAll(): void {
+        const timestamp = new Date().toISOString();
         if (this.currentRoomId) {
             this.sendSignalingMessage({ type: 'leave' });
         }
 
         this.peerConnections.forEach((pc, id) => {
+            console.log(`[WebRtcService][${timestamp}] Closing peer connection with: ${id} - Match/Session ID: ${this.currentRoomId}`);
             pc.close();
-            console.log(`[WebRtcService] Disconnected ${id}`);
+            console.log(`[WebRtcService][${timestamp}] Disconnected ${id}`);
         });
         this.peerConnections.clear();
         this.makingOffer.clear();
         this.ignoreOffer.clear();
         this.isSettingRemoteAnswerPending.clear();
+        this.pendingCandidates.clear();
+        this.remoteStreams.clear();
         this.currentRoomId = null;
 
         if (this.signalingSocket) {
