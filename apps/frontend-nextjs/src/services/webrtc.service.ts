@@ -149,26 +149,40 @@ export class WebRtcService {
 
         console.log(`[WebRtcService] Creating peer connection with: ${participantId}`);
 
+        // Selalu tambahkan STUN dan TURN gratis dari openrelay untuk berjaga-jaga jika backend gagal mengirimkan credentials yang benar
+        const fallbackIceServers: RTCIceServer[] = [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:openrelay.metered.ca:80' },
+            {
+                urls: 'turn:openrelay.metered.ca:80',
+                username: 'openrelayproject',
+                credential: 'openrelayproject'
+            },
+            {
+                urls: 'turn:openrelay.metered.ca:443',
+                username: 'openrelayproject',
+                credential: 'openrelayproject'
+            },
+            {
+                urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+                username: 'openrelayproject',
+                credential: 'openrelayproject'
+            }
+        ];
+
+        // Gabungkan ICE Servers dari backend dengan fallback
+        const finalIceServers = [...fallbackIceServers];
+        if (this.iceServers.length > 0) {
+            // Saring 'localhost' turn servers karena itu pasti salah konfigurasi dari backend
+            const validBackendServers = this.iceServers.filter(server => {
+                const urlString = Array.isArray(server.urls) ? server.urls.join(',') : server.urls;
+                return !urlString.includes('localhost');
+            });
+            finalIceServers.push(...validBackendServers);
+        }
+
         const config: RTCConfiguration = {
-            iceServers: this.iceServers.length > 0 ? this.iceServers : [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:openrelay.metered.ca:80' },
-                {
-                    urls: 'turn:openrelay.metered.ca:80',
-                    username: 'openrelayproject',
-                    credential: 'openrelayproject'
-                },
-                {
-                    urls: 'turn:openrelay.metered.ca:443',
-                    username: 'openrelayproject',
-                    credential: 'openrelayproject'
-                },
-                {
-                    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-                    username: 'openrelayproject',
-                    credential: 'openrelayproject'
-                }
-            ]
+            iceServers: finalIceServers
         };
 
         const pc = new RTCPeerConnection(config);
