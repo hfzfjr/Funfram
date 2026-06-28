@@ -61,6 +61,8 @@ export interface CallStore {
     // Participants
     leftParticipants: Participant[]; // Local Frame (Frame A)
     rightParticipants: Participant[]; // Remote Frame (Frame B)
+    
+    customAlert: { message: string, visible: boolean, type: 'error' | 'success' | 'info' } | null;
 
     // Chats (Temporary, reset on leave)
     generalChat: ChatMessage[];
@@ -90,6 +92,9 @@ export interface CallStore {
     setSession: (session: Session | null) => void;
     handleOpponentLeft: (payload: { userId?: string; frameId?: string; sessionId?: string; reason?: string }) => void;
     triggerNextFrame: () => boolean; // returns true if action allowed (rate limited)
+    
+    showCustomAlert: (message: string, type?: 'error' | 'success' | 'info') => void;
+    hideCustomAlert: () => void;
 
     // Chat Actions
     sendGeneralMessage: (text: string) => void;
@@ -157,6 +162,8 @@ export const useCallStore = create<CallStore>((set, get) => ({
     leftParticipants: [],
     rightParticipants: [],
     generalChat: [],
+    
+    customAlert: null,
     gameInvite: null,
     gameState: null,
     lastNextFrameClick: 0,
@@ -280,7 +287,8 @@ export const useCallStore = create<CallStore>((set, get) => ({
                 ? state.leftParticipants.filter(p => p.id !== leavingId)
                 : state.leftParticipants;
 
-            WebRtcService.getInstance().disconnectAll();
+            const webrtc = WebRtcService.getInstance();
+            state.rightParticipants.forEach(p => webrtc.disconnectPeer(p.id));
 
             return {
                 sessionId: null,
@@ -307,9 +315,15 @@ export const useCallStore = create<CallStore>((set, get) => ({
             console.warn('Rate limit active on next frame. Please wait.');
             return false;
         }
-        // Send next frame request to backend
-        WebSocketService.getInstance().sendEvent('FRAME_NEXT', {});
-        WebRtcService.getInstance().disconnectAll();
+        const state = get();
+        if (!state.sessionId) {
+            WebSocketService.getInstance().sendEvent('SEARCH_START', { frameId: state.frameId });
+        } else {
+            WebSocketService.getInstance().sendEvent('FRAME_NEXT', { frameId: state.frameId, sessionId: state.sessionId });
+        }
+        
+        state.rightParticipants.forEach(p => WebRtcService.getInstance().disconnectPeer(p.id));
+
         set({
             lastNextFrameClick: now,
             fsmState: 'SEARCHING',
@@ -321,6 +335,16 @@ export const useCallStore = create<CallStore>((set, get) => ({
             generalChat: [],
         });
         return true;
+    },
+    
+    showCustomAlert: (message, type = 'error') => {
+        set({ customAlert: { message, visible: true, type } });
+    },
+    
+    hideCustomAlert: () => {
+        set((state) => ({
+            customAlert: state.customAlert ? { ...state.customAlert, visible: false } : null
+        }));
     },
 
     sendGeneralMessage: (text) => {

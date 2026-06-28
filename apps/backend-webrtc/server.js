@@ -40,7 +40,9 @@ wss.on('connection', (ws) => {
             switch (data.type) {
                 case 'join':
                     const roomID = data.roomID;
-                    ws.roomID = roomID;
+                    if (!ws.rooms) ws.rooms = new Set();
+                    ws.rooms.add(roomID);
+                    
                     if (data.userId) {
                         ws.id = data.userId;
                     }
@@ -65,15 +67,15 @@ wss.on('connection', (ws) => {
                     break;
 
                 case 'offer':
-                    if (ws.roomID && rooms[ws.roomID]) {
-                        if (data.targetId) {
-                            sendToUser(ws.roomID, data.targetId, {
-                                type: 'offer',
-                                offer: data.offer,
-                                sender: ws.id,
-                            });
-                        } else {
-                            broadcastToRoom(ws.roomID, {
+                    if (data.targetId) {
+                        sendToUser(data.targetId, {
+                            type: 'offer',
+                            offer: data.offer,
+                            sender: ws.id,
+                        });
+                    } else if (ws.rooms) {
+                        for (const r of ws.rooms) {
+                            broadcastToRoom(r, {
                                 type: 'offer',
                                 offer: data.offer,
                                 sender: ws.id,
@@ -83,15 +85,15 @@ wss.on('connection', (ws) => {
                     break;
 
                 case 'answer':
-                    if (ws.roomID && rooms[ws.roomID]) {
-                        if (data.targetId) {
-                            sendToUser(ws.roomID, data.targetId, {
-                                type: 'answer',
-                                answer: data.answer,
-                                sender: ws.id,
-                            });
-                        } else {
-                            broadcastToRoom(ws.roomID, {
+                    if (data.targetId) {
+                        sendToUser(data.targetId, {
+                            type: 'answer',
+                            answer: data.answer,
+                            sender: ws.id,
+                        });
+                    } else if (ws.rooms) {
+                        for (const r of ws.rooms) {
+                            broadcastToRoom(r, {
                                 type: 'answer',
                                 answer: data.answer,
                                 sender: ws.id,
@@ -101,15 +103,15 @@ wss.on('connection', (ws) => {
                     break;
 
                 case 'ice-candidate':
-                    if (ws.roomID && rooms[ws.roomID]) {
-                        if (data.targetId) {
-                            sendToUser(ws.roomID, data.targetId, {
-                                type: 'ice-candidate',
-                                candidate: data.candidate,
-                                sender: ws.id,
-                            });
-                        } else {
-                            broadcastToRoom(ws.roomID, {
+                    if (data.targetId) {
+                        sendToUser(data.targetId, {
+                            type: 'ice-candidate',
+                            candidate: data.candidate,
+                            sender: ws.id,
+                        });
+                    } else if (ws.rooms) {
+                        for (const r of ws.rooms) {
+                            broadcastToRoom(r, {
                                 type: 'ice-candidate',
                                 candidate: data.candidate,
                                 sender: ws.id,
@@ -150,11 +152,19 @@ function broadcastToRoom(roomID, message, excludeWs = null) {
     });
 }
 
-function sendToUser(roomID, targetId, message) {
-    if (!rooms[roomID]) return;
-    const target = rooms[roomID].find(client => client.id === targetId);
+function sendToUser(targetId, message) {
+    let target = null;
+    for (const client of wss.clients) {
+        if (client.id === targetId) {
+            target = client;
+            break;
+        }
+    }
+    
     if (target && target.readyState === WebSocket.OPEN) {
         target.send(JSON.stringify(message));
+    } else {
+        console.log(`Target user ${targetId} not found or connection closed`);
     }
 }
 

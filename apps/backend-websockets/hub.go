@@ -39,9 +39,11 @@ type Lobby struct {
 	ID         string
 	OwnerID    string
 	InviteCode string
-	Status     string // WAITING, MATCHING, MATCHED, PLAYING, CLOSED
-	Members    map[string]*Client
-	CreatedAt  time.Time
+	Status           string // WAITING, MATCHING, MATCHED, PLAYING, CLOSED
+	Members          map[string]*Client
+	CreatedAt        time.Time
+	LastActivity     time.Time
+	LastMatchLobbyID string
 }
 
 type Frame struct {
@@ -160,9 +162,11 @@ func (h *Hub) CreateLobby(ownerID, username string) *Lobby {
 		ID:         lobbyID,
 		OwnerID:    ownerID,
 		InviteCode: inviteCode,
-		Status:     "WAITING",
-		Members:    make(map[string]*Client),
-		CreatedAt:  time.Now(),
+		Status:           "WAITING",
+		Members:          make(map[string]*Client),
+		CreatedAt:        time.Now(),
+		LastActivity:     time.Now(),
+		LastMatchLobbyID: "",
 	}
 
 	h.lobbies[lobbyID] = lobby
@@ -253,9 +257,24 @@ func (h *Hub) AddToMatchmaking(lobbyID string) {
 		return
 	}
 
+	lobby.LastActivity = time.Now()
+
+	// Notify lobby members that matchmaking has started
+	for _, member := range lobby.Members {
+		member.Presence = "MATCHING"
+	}
+	
+	h.broadcastEventToLobby(lobbyID, "MATCHMAKING_STARTED", map[string]interface{}{})
+
 	// Check if there's a waiting lobby to match with
 	for i, waitingLobby := range h.waitingQueue {
-		if waitingLobby.ID != lobbyID && waitingLobby.Status == "WAITING" {
+		if waitingLobby.ID != lobbyID && waitingLobby.Status == "WAITING" && len(waitingLobby.Members) > 0 {
+			if lobby.LastMatchLobbyID != "" && lobby.LastMatchLobbyID == waitingLobby.ID {
+				continue // Skip the last matched lobby to prevent instant rematch
+			}
+			if waitingLobby.LastMatchLobbyID != "" && waitingLobby.LastMatchLobbyID == lobby.ID {
+				continue // Skip the last matched lobby to prevent instant rematch
+			}
 			// Match found!
 			h.createMatch(lobby, waitingLobby)
 			h.waitingQueue = append(h.waitingQueue[:i], h.waitingQueue[i+1:]...)

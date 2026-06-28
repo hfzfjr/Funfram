@@ -21,6 +21,7 @@ function FunVideoContent() {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [isMicOn, setIsMicOn] = useState(true);
     const [isCamOn, setIsCamOn] = useState(true);
+    const [topAlert, setTopAlert] = useState<string | null>(null);
 
     const videoTrackRef = useRef<MediaStreamTrack | null>(null);
     const audioTrackRef = useRef<MediaStreamTrack | null>(null);
@@ -170,10 +171,8 @@ function FunVideoContent() {
             store.setFrameOwnerId(payload.ownerId);
             // Persist frameId in store
             useCallStore.setState({ frameId: payload.frameId, inviteToken: null });
-            // Bootstrap the left participant list with ourselves
-            if (store.leftParticipants.length === 0) {
-                useCallStore.setState({ leftParticipants: [local] });
-            }
+            // Always set left participant list with ourselves upon creation
+            useCallStore.setState({ leftParticipants: [local] });
             // Save session for reconnect
             sessionStorage.setItem('funfram_session', JSON.stringify({
                 userId: payload.ownerId,
@@ -188,13 +187,11 @@ function FunVideoContent() {
                     ...local,
                     stream: localStreamRef.current,
                 });
-                if (store.leftParticipants.length > 0) {
-                    useCallStore.setState({
-                        leftParticipants: store.leftParticipants.map(p =>
-                            p.id === local.id ? { ...p, stream: localStreamRef.current } : p
-                        )
-                    });
-                }
+                useCallStore.setState((state) => ({
+                    leftParticipants: state.leftParticipants.map(p =>
+                        p.id === local.id ? { ...p, stream: localStreamRef.current } : p
+                    )
+                }));
             }
 
             // Connect WebRTC for the Lobby using frameId
@@ -273,26 +270,17 @@ function FunVideoContent() {
             };
             useCallStore.getState().addParticipant('left', participant);
             
-            // Add system notification to chat
-            useCallStore.setState((state) => ({
-                generalChat: [...state.generalChat, {
-                    id: Date.now().toString(),
-                    senderId: 'system',
-                    senderName: 'System',
-                    text: `${participantName} bergabung dalam frame`,
-                    side: 'left',
-                    timestamp: new Date().toISOString()
-                }]
-            }));
+            // Show alert instead of chat message
+            setTopAlert(`${participantName} bergabung dalam frame`);
+            setTimeout(() => {
+                setTopAlert(null);
+            }, 5000);
         };
 
         const connectWebRTC = (roomId: string) => {
             const webrtc = WebRtcService.getInstance();
             const webrtcUrl = process.env.NEXT_PUBLIC_WS_WEBRTC_URL || 'ws://localhost:5002';
             const store = useCallStore.getState();
-            
-            // Disconnect from previous room if any
-            webrtc.disconnectAll();
             
             webrtc.setLocalStream(localStreamRef.current);
             webrtc.onRemoteStream((participantId, stream) => {
@@ -349,6 +337,12 @@ function FunVideoContent() {
         // ── MATCH_LEFT: opponent frame left ──────────────────────────────────
         const onMatchLeft = () => {
             useCallStore.getState().handleOpponentLeft({});
+        };
+
+        const onMatchmakingStarted = () => {
+            const store = useCallStore.getState();
+            store.setFsmState('SEARCHING');
+            useCallStore.setState({ matchmakingState: 'Searching' });
         };
 
         const onPlayerLeft = (payload: any) => {
@@ -449,11 +443,31 @@ function FunVideoContent() {
             useCallStore.getState().receiveCanvasEvent(payload);
         };
 
+        const onFrameDestroyed = () => {
+            useCallStore.getState().showCustomAlert('Pemilik frame telah menutup frame ini. Anda akan dikembalikan ke lobi.');
+            handleLeave();
+        };
+
+        const onError = (payload: any) => {
+            const errorMsg = payload.error || payload.message;
+            console.error('Server error:', errorMsg);
+            
+            if (errorMsg === 'lobby not found') {
+                useCallStore.getState().showCustomAlert('Tautan undangan sudah tidak valid karena pemilik telah keluar atau frame kadaluarsa.');
+                handleLeave();
+            } else if (errorMsg === 'frame idle timeout') {
+                useCallStore.getState().showCustomAlert('Frame ditutup karena sudah lebih dari 5 menit tidak ada aktivitas.');
+                handleLeave();
+            }
+        };
+
+        ws.on('ERROR', onError);
         ws.on('FRAME_CREATED', onFrameCreated);
         ws.on('FRAME_JOINED', onFrameJoined);
         ws.on('PLAYER_JOIN', onPlayerJoin);
         ws.on('MATCH_FOUND', onMatchFound);
         ws.on('MATCH_LEFT', onMatchLeft);
+        ws.on('MATCHMAKING_STARTED', onMatchmakingStarted);
         ws.on('PLAYER_LEFT', onPlayerLeft);
         ws.on('DEVICE_STATE_CHANGE', onDeviceStateChange);
         ws.on('MUTE_UPDATE', onMuteUpdate);
@@ -468,6 +482,7 @@ function FunVideoContent() {
         ws.on('CANVAS_START', onCanvasEvent);
         ws.on('CANVAS_MOVE', onCanvasEvent);
         ws.on('CANVAS_END', onCanvasEvent);
+        ws.on('FRAME_DESTROYED', onFrameDestroyed);
 
         return () => {
             ws.off('FRAME_CREATED', onFrameCreated);
@@ -489,6 +504,9 @@ function FunVideoContent() {
             ws.off('CANVAS_START', onCanvasEvent);
             ws.off('CANVAS_MOVE', onCanvasEvent);
             ws.off('CANVAS_END', onCanvasEvent);
+            ws.off('FRAME_DESTROYED', onFrameDestroyed);
+            ws.off('ERROR', onError);
+            ws.off('MATCHMAKING_STARTED', onMatchmakingStarted);
             WebRtcService.getInstance().disconnectAll();
             stopLocalMedia();
             ws.disconnect();
@@ -576,7 +594,7 @@ function FunVideoContent() {
             if (verification.isValid) {
                 ws.sendWhenOpen('PLAYER_JOIN', { frameId, username: confirmedUsername });
             } else {
-                alert('Invitation link is invalid or has expired. Creating a new frame lobby instead.');
+                useCallStore.getState().showCustomAlert('Invitation link is invalid or has expired. Creating a new frame lobby instead.');
                 ws.sendWhenOpen('FRAME_CREATE', { username: confirmedUsername });
             }
         } else {
@@ -685,6 +703,24 @@ function FunVideoContent() {
                 <Navbar />
 
                 <div className={styles.content}>
+                    {topAlert && (
+                        <div style={{
+                            position: 'absolute',
+                            top: '20px',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            background: '#18181b',
+                            border: '1px solid #27272a',
+                            color: '#0ea5e9',
+                            padding: '12px 24px',
+                            borderRadius: '16px',
+                            fontWeight: '600',
+                            zIndex: 1000,
+                            animation: 'fadeIn 0.2s forwards'
+                        }}>
+                            {topAlert}
+                        </div>
+                    )}
                     {fsmState === 'PLAYING' || fsmState === 'RESULT' ? (
                         <GameScene />
                     ) : (

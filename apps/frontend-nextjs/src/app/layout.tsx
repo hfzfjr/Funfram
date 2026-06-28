@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import CustomAlertModal from '@/components/ui/overlay/CustomAlertModal';
 
 export const metadata: Metadata = {
   title: "FunFram - Connect & Play in Real-Time",
@@ -13,7 +14,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="h-full antialiased">
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="antialiased font-sans">
+        {children}
+        <CustomAlertModal />
+      </body>
     </html>
   );
 }
