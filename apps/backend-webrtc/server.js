@@ -40,6 +40,7 @@ wss.on('connection', (ws) => {
             switch (data.type) {
                 case 'join':
                     const roomID = data.roomID;
+                    ws.roomID = roomID; // Set this so handleDisconnect can clean up properly
                     if (!ws.rooms) ws.rooms = new Set();
                     ws.rooms.add(roomID);
                     
