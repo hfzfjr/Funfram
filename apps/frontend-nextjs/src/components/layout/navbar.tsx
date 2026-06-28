@@ -10,17 +10,30 @@ import '../ui/overlay/InviteFriendsOverlay.css'; // Ensure modal classes are loa
 export default function Navbar() {
     const [showInviteOverlay, setShowInviteOverlay] = useState(false);
     const [showFunChatModal, setShowFunChatModal] = useState(false);
+    const [showMobileMenu, setShowMobileMenu] = useState(false);
 
     const handleFunChatClick = (e: React.MouseEvent) => {
         e.preventDefault();
         setShowFunChatModal(true);
+        setShowMobileMenu(false);
     };
 
     return (
         <>
             <nav className="navbar">
-                {/* Left: Logo and Live indicator */}
+                {/* Left: Hamburger, Logo and Live indicator */}
                 <div className="navbar-left">
+                    <button 
+                        className="mobile-menu-btn" 
+                        onClick={() => setShowMobileMenu(true)}
+                        aria-label="Open menu"
+                    >
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <line x1="3" y1="12" x2="21" y2="12"></line>
+                            <line x1="3" y1="6" x2="21" y2="6"></line>
+                            <line x1="3" y1="18" x2="21" y2="18"></line>
+                        </svg>
+                    </button>
                     <img
                         src="/logo-utama.png"
                         alt="FunFram"
@@ -32,7 +45,7 @@ export default function Navbar() {
                     </div>
                 </div>
 
-                {/* Center: Navigation */}
+                {/* Center: Navigation (Hidden on mobile) */}
                 <div className="navbar-center">
                     <Link href="/funvideo" className="nav-link active">
                         FunVideo
@@ -47,6 +60,26 @@ export default function Navbar() {
                     onClick={() => setShowInviteOverlay(true)}
                 />
             </nav>
+
+            {/* Mobile Sidebar */}
+            {showMobileMenu && (
+                <div className="mobile-sidebar-overlay" onClick={() => setShowMobileMenu(false)}>
+                    <div className="mobile-sidebar" onClick={(e) => e.stopPropagation()}>
+                        <div className="mobile-sidebar-header">
+                            <img src="/logo-utama.png" alt="FunFram" className="navbar-logo" />
+                            <button className="close-button" onClick={() => setShowMobileMenu(false)}>✕</button>
+                        </div>
+                        <div className="mobile-sidebar-nav">
+                            <Link href="/funvideo" className="nav-link active" onClick={() => setShowMobileMenu(false)}>
+                                FunVideo
+                            </Link>
+                            <a href="/funchat" onClick={handleFunChatClick} className="nav-link">
+                                FunChat
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Invite Friends Overlay */}
             {showInviteOverlay && (

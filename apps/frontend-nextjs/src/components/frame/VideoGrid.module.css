@@ -40,3 +40,9 @@
     grid-template-columns: 1fr 1fr;
     grid-template-rows: 1fr 1fr;
 }
+
+@media (max-width: 768px) {
+    .container {
+        gap: 4px; /* Tighter gap on smaller screens to maximize visibility */
+    }
+}
