@@ -95,3 +95,39 @@
   text-align: center;
   margin-top: 2rem;
 }
+
+@media (max-width: 768px) {
+  .container {
+    flex-direction: column;
+    height: 100%;
+    /* Let page.module.css handle padding-bottom if needed */
+  }
+  
+  .canvasWrapper {
+    flex: 1;
+    min-height: 40vh;
+  }
+  
+  .sidebar {
+    flex: none;
+    order: 2; /* Ensure sidebar is at the bottom */
+    overflow-y: auto;
+    max-height: 45vh; /* slightly larger */
+    padding-top: 0;
+  }
+
+  .statusPanel {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #1e1e2f;
+    border: 2px solid #08A7FD;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  }
+
+  .word {
+    font-size: 1.8rem;
+    color: #facc15;
+    text-align: center;
+  }
+}

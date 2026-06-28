@@ -75,6 +75,11 @@ export default function GameScene() {
           {gameState.status === 'Reveal' && gameState.currentWord && (
             <span className={styles.answer}>Answer: {gameState.currentWord}</span>
           )}
+          {canGuess && (
+            <div style={{ marginTop: '8px' }}>
+              <GuessInput onSubmit={submitGuess} />
+            </div>
+          )}
         </div>
         <ScoreBoard scores={gameState.score} names={playerNames} />
         <div className={styles.timer}>
@@ -83,9 +88,6 @@ export default function GameScene() {
         <button type="button" className={styles.stopButton} onClick={handleStopGame}>
           Stop Game
         </button>
-        {canGuess && (
-          <GuessInput onSubmit={submitGuess} />
-        )}
       </div>
     </div>
   );
