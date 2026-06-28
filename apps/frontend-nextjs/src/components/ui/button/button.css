@@ -107,13 +107,21 @@
 
 .unread-badge {
     position: absolute;
-    top: -2px;
-    right: -2px;
-    width: 8px;
-    height: 8px;
+    top: 4px;
+    right: 16px;
+    width: 12px;
+    height: 12px;
     background-color: #ef4444;
     border-radius: 50%;
-    border: 2px solid #1a1a1a;
+    border: 2px solid #191B22;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+    animation: pulseBadge 2s infinite;
+}
+
+@keyframes pulseBadge {
+    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+    70% { transform: scale(1.1); box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
 }
 
 @media (max-width: 768px) {
@@ -130,5 +138,10 @@
     
     .button svg, .invite-button svg {
         margin: 0;
+    }
+
+    .unread-badge {
+        top: 2px;
+        right: 2px;
     }
 }
