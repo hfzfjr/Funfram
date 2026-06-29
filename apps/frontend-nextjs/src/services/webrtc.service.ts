@@ -14,6 +14,7 @@ export class WebRtcService {
     private isSettingRemoteAnswerPending: Map<string, boolean> = new Map();
     private pendingCandidates: Map<string, RTCIceCandidateInit[]> = new Map();
     private remoteStreams: Map<string, MediaStream> = new Map();
+    private iceRestarts: Map<string, number> = new Map();
 
     private constructor() { }
 
@@ -194,6 +195,7 @@ export class WebRtcService {
         this.makingOffer.set(participantId, false);
         this.ignoreOffer.set(participantId, false);
         this.isSettingRemoteAnswerPending.set(participantId, false);
+        this.iceRestarts.set(participantId, 0);
 
         // Add local tracks via transceivers for robust negotiation
         if (this.localStream) {
@@ -271,8 +273,27 @@ export class WebRtcService {
             const timestamp = new Date().toISOString();
             console.log(`[WebRtcService][${timestamp}] Connection state with ${participantId}: ${pc.connectionState} - Match/Session ID: ${this.currentRoomId}`);
             if (pc.connectionState === 'failed') {
-                // Trigger ICE restart
-                pc.restartIce();
+                const restarts = this.iceRestarts.get(participantId) || 0;
+                if (restarts < 1) {
+                    this.iceRestarts.set(participantId, restarts + 1);
+                    console.log(`[WebRtcService][${timestamp}] Triggering ICE restart (attempt 1) for ${participantId} due to failed state.`);
+                    pc.restartIce();
+                } else {
+                    console.error(`[WebRtcService][${timestamp}] ICE connection failed permanently for ${participantId}. No more ICE restarts to prevent negotiation loop.`);
+                }
+            } else if (pc.connectionState === 'connected') {
+                pc.getStats().then(stats => {
+                    stats.forEach(report => {
+                        if (report.type === 'transport' && report.selectedCandidatePairId) {
+                            const pair = stats.get(report.selectedCandidatePairId);
+                            if (pair) {
+                                const local = stats.get(pair.localCandidateId);
+                                const remote = stats.get(pair.remoteCandidateId);
+                                console.log(`[WebRtcService][${timestamp}] Selected ICE Pair for ${participantId}: Local(${local?.candidateType}) -> Remote(${remote?.candidateType})`);
+                            }
+                        }
+                    });
+                });
             }
         };
 
@@ -393,6 +414,7 @@ export class WebRtcService {
             this.isSettingRemoteAnswerPending.delete(participantId);
             this.pendingCandidates.delete(participantId);
             this.remoteStreams.delete(participantId);
+            this.iceRestarts.delete(participantId);
             console.log(`[WebRtcService][${timestamp}] Closed peer connection with: ${participantId}`);
         }
     }
@@ -414,6 +436,7 @@ export class WebRtcService {
         this.isSettingRemoteAnswerPending.clear();
         this.pendingCandidates.clear();
         this.remoteStreams.clear();
+        this.iceRestarts.clear();
         this.currentRoomId = null;
 
         if (this.signalingSocket) {
