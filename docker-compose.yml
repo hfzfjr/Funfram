@@ -50,13 +50,13 @@ services:
       - funfram-network
     restart: unless-stopped
 
-  # TURN Server - Coturn (Optional - comment out if using Cloudflare only)
+  # TURN Server - Coturn (Local TURN Server)
   coturn:
     image: coturn/coturn:4.6.2
     command:
       - -n
       - --log-file=stdout
-      - --external-ip=${TURN_EXTERNAL_IP:-127.0.0.1}
+      - --external-ip=${SERVER_PUBLIC_IP:-127.0.0.1}
       - --fingerprint
       - --lt-cred-mech
       - --user=${TURN_USERNAME:-funfram}:${TURN_CREDENTIAL:-funfram_secret}
@@ -65,9 +65,11 @@ services:
       - --no-tlsv1
       - --no-tlsv1_1
       - --no-stdout-log
+      - --listening-port=3478
+      - --relay-ip=${SERVER_PUBLIC_IP:-127.0.0.1}
     network_mode: "host"
     environment:
-      - TURN_EXTERNAL_IP=${TURN_EXTERNAL_IP:-127.0.0.1}
+      - TURN_EXTERNAL_IP=${SERVER_PUBLIC_IP:-127.0.0.1}
     restart: unless-stopped
   # Nginx Reverse Proxy (Optional - not needed with Cloudflare tunneling)
   # Comment out this service if using Cloudflare tunneling
