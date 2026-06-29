@@ -38,7 +38,7 @@ export default function VideoTile({ participant }: VideoTileProps) {
                     autoPlay
                     playsInline
                     muted={isLocalVideo || participant.isMuted}
-                    className={styles.video}
+                    className={`${styles.video} ${isLocalVideo ? styles.mirrored : ''}`}
                 />
             ) : (
                 <div className={styles.placeholder}>
