@@ -7,6 +7,8 @@ export class WebRtcService {
     private currentRoomId: string | null = null;
     private localUserId: string | null = null;
     private iceServers: RTCIceServer[] = [];
+    private iceServersReady: boolean = false;
+    private pendingUserJoins: string[] = [];
     
     // For Perfect Negotiation
     private makingOffer: Map<string, boolean> = new Map();
@@ -104,15 +106,26 @@ export class WebRtcService {
         switch (data.type) {
             case 'ice-servers':
                 this.iceServers = data.iceServers;
-                console.log('[WebRtcService] ICE servers configured');
+                this.iceServersReady = true;
+                console.log('[WebRtcService] ICE servers configured:', this.iceServers.length, 'servers');
+                // Proses user-joined yang tertunda karena ICE servers belum siap
+                for (const userId of this.pendingUserJoins) {
+                    console.log('[WebRtcService] Processing deferred user-joined:', userId);
+                    this.createPeerConnection(userId, true);
+                }
+                this.pendingUserJoins = [];
                 break;
 
             case 'user-joined':
                 console.log('[WebRtcService] User joined:', data.userId);
-                // When a new user joins, if our ID is 'greater', we act as polite, otherwise impolite.
-                // We'll let both sides initiate Perfect Negotiation by having BOTH call createPeerConnection
-                // but the polite peer logic resolves glare.
-                this.createPeerConnection(data.userId, true);
+                if (this.iceServersReady) {
+                    // ICE servers sudah siap, langsung buat koneksi
+                    this.createPeerConnection(data.userId, true);
+                } else {
+                    // ICE servers belum diterima, tunda dulu
+                    console.log('[WebRtcService] ICE servers not ready yet, deferring peer connection for:', data.userId);
+                    this.pendingUserJoins.push(data.userId);
+                }
                 break;
 
             case 'offer':
@@ -153,25 +166,9 @@ export class WebRtcService {
         const timestamp = new Date().toISOString();
         console.log(`[WebRtcService][${timestamp}] Creating peer connection with: ${participantId} - Match/Session ID: ${this.currentRoomId}`);
 
-        // Selalu tambahkan STUN dan TURN gratis dari openrelay untuk berjaga-jaga jika backend gagal mengirimkan credentials yang benar
+        // Hanya tambahkan STUN dasar dari Google. Konfigurasi TURN harus berasal murni dari backend.
         const fallbackIceServers: RTCIceServer[] = [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:openrelay.metered.ca:80' },
-            {
-                urls: 'turn:openrelay.metered.ca:80',
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
-            },
-            {
-                urls: 'turn:openrelay.metered.ca:443',
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
-            },
-            {
-                urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
-            }
+            { urls: 'stun:stun.l.google.com:19302' }
         ];
 
         // Gabungkan ICE Servers dari backend dengan fallback
@@ -376,7 +373,7 @@ export class WebRtcService {
 
     private async handleIceCandidate(candidate: RTCIceCandidateInit, sender: string) {
         const timestamp = new Date().toISOString();
-        const pc = this.peerConnections.get(sender);
+        const pc = this.getPeerConnection(sender);
         if (pc) {
             if (pc.remoteDescription) {
                 try {
@@ -438,6 +435,10 @@ export class WebRtcService {
         this.remoteStreams.clear();
         this.iceRestarts.clear();
         this.currentRoomId = null;
+        // Reset ICE server state agar koneksi baru menggunakan fresh config
+        this.iceServers = [];
+        this.iceServersReady = false;
+        this.pendingUserJoins = [];
 
         if (this.signalingSocket) {
             this.signalingSocket.close();
