@@ -57,6 +57,7 @@ services:
       - -n
       - --log-file=stdout
       - --external-ip=${SERVER_PUBLIC_IP:-127.0.0.1}
+      - --listening-ip=0.0.0.0
       - --fingerprint
       - --lt-cred-mech
       - --user=${TURN_USERNAME:-funfram}:${TURN_CREDENTIAL:-funfram_secret}
@@ -67,6 +68,8 @@ services:
       - --no-stdout-log
       - --listening-port=3478
       - --relay-ip=${SERVER_PUBLIC_IP:-127.0.0.1}
+      - --min-port=49152
+      - --max-port=65535
     network_mode: "host"
     environment:
       - TURN_EXTERNAL_IP=${SERVER_PUBLIC_IP:-127.0.0.1}
