@@ -9,28 +9,30 @@ const PORT = process.env.PORT || 5002;
 const wss = new WebSocket.Server({ port: PORT });
 
 // Variabel untuk menyimpan daftar ruangan dan anggotanya
-// Format: { "match-123": [client1, client2] }
 const rooms = {};
 
-// STUN servers configuration
+// STUN servers configuration (Default bawaan Google)
 const iceServers = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
 ];
 
-// Add TURN server if configured
-if (process.env.TURN_SERVER_URL && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL) {
-    iceServers.push({
-        urls: process.env.TURN_SERVER_URL,
-        username: process.env.TURN_USERNAME,
-        credential: process.env.TURN_CREDENTIAL,
-    });
-}
+// MENGATASI BUG: Sinkronisasi dynamic credential dari .env untuk Docker
+const turnUrl = process.env.TURN_SERVER_URL || 'turn:182.253.158.158:3478';
+const turnUser = process.env.TURN_USERNAME || 'funfram';
+const turnCred = process.env.TURN_CREDENTIAL || 'letsgooo_Funfram';
+
+// Tambahkan TURN server ke list ICE servers
+iceServers.push({
+    urls: turnUrl,
+    username: turnUser,
+    credential: turnCred,
+});
 
 wss.on('connection', (ws) => {
     console.log('Klien WebRTC baru terhubung');
-    ws.id = Math.random().toString(36).substr(2, 9); // Fallback ID
+    ws.id = Math.random().toString(36).substr(2, 9);
 
     ws.on('message', (message) => {
         try {
@@ -40,10 +42,10 @@ wss.on('connection', (ws) => {
             switch (data.type) {
                 case 'join':
                     const roomID = data.roomID;
-                    ws.roomID = roomID; // Set this so handleDisconnect can clean up properly
+                    ws.roomID = roomID;
                     if (!ws.rooms) ws.rooms = new Set();
                     ws.rooms.add(roomID);
-                    
+
                     if (data.userId) {
                         ws.id = data.userId;
                     }
@@ -54,13 +56,13 @@ wss.on('connection', (ws) => {
                     rooms[roomID].push(ws);
                     console.log(`User ${ws.id} masuk ke ${roomID}. Total anggota: ${rooms[roomID].length}`);
 
-                    // Send ICE servers configuration
+                    // Kirim konfigurasi ICE servers ke user yang baru bergabung
                     ws.send(JSON.stringify({
                         type: 'ice-servers',
                         iceServers: iceServers,
                     }));
 
-                    // Notify other clients in the room
+                    // Beritahu client lain di dalam ruangan
                     broadcastToRoom(roomID, {
                         type: 'user-joined',
                         userId: ws.id,
@@ -145,7 +147,6 @@ wss.on('connection', (ws) => {
 
 function broadcastToRoom(roomID, message, excludeWs = null) {
     if (!rooms[roomID]) return;
-
     rooms[roomID].forEach(client => {
         if (client !== excludeWs && client.readyState === WebSocket.OPEN) {
             client.send(JSON.stringify(message));
@@ -161,7 +162,7 @@ function sendToUser(targetId, message) {
             break;
         }
     }
-    
+
     if (target && target.readyState === WebSocket.OPEN) {
         target.send(JSON.stringify(message));
     } else {
@@ -174,13 +175,11 @@ function handleDisconnect(ws) {
         rooms[ws.roomID] = rooms[ws.roomID].filter(client => client !== ws);
         console.log(`User ${ws.id} keluar dari ${ws.roomID}. Sisa: ${rooms[ws.roomID].length}`);
 
-        // Notify other clients
         broadcastToRoom(ws.roomID, {
             type: 'user-left',
             userId: ws.id,
         });
 
-        // Hapus room dari memori jika sudah kosong
         if (rooms[ws.roomID].length === 0) {
             delete rooms[ws.roomID];
             console.log(`Room ${ws.roomID} dihapus karena kosong`);
@@ -191,6 +190,4 @@ function handleDisconnect(ws) {
 
 console.log(`WebRTC Signaling Server berjalan di port ${PORT}...`);
 console.log('STUN servers:', iceServers.filter(s => s.urls.includes('stun')).map(s => s.urls));
-if (process.env.TURN_SERVER_URL) {
-    console.log('TURN server:', process.env.TURN_SERVER_URL);
-}
+console.log('TURN server terpasang:', turnUrl);
