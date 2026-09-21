@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useCallStore } from '@/store/useCallStore';
 import InviteFriendsButton from '../ui/button/InviteFriendsButton';
 import InviteFriendsOverlay from '../ui/overlay/InviteFriendsOverlay';
 import './navbar.css';
@@ -57,7 +58,14 @@ export default function Navbar() {
 
                 {/* Right: Invite Friends button */}
                 <InviteFriendsButton
-                    onClick={() => setShowInviteOverlay(true)}
+                    onClick={() => {
+                        const { fsmState, showCustomAlert } = useCallStore.getState();
+                        if (fsmState === 'FRAME') {
+                            setShowInviteOverlay(true);
+                        } else {
+                            showCustomAlert('Kamu sedang mencari/berada di dalam match. Kembali ke lobby (tekan tombol Lobby) terlebih dahulu untuk mengundang teman.', 'error');
+                        }
+                    }}
                 />
             </nav>
 

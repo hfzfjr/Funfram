@@ -486,6 +486,26 @@ function FunVideoContent() {
         ws.on('CANVAS_START', onCanvasEvent);
         ws.on('CANVAS_MOVE', onCanvasEvent);
         ws.on('CANVAS_END', onCanvasEvent);
+        const onLobbyReturned = () => {
+            // Kembali ke lobby: teman tetap di frame, hanya match/search yang dibatalkan
+            useCallStore.setState((state) => ({
+                fsmState: 'FRAME',
+                matchmakingState: 'Waiting',
+                sessionId: null,
+                rightParticipants: [],
+                gameState: null,
+                gameInvite: null,
+                generalChat: [],
+            }));
+            // Reconnect WebRTC untuk lobby (supaya audio/video teman tetap jalan)
+            const store = useCallStore.getState();
+            if (store.frameId) {
+                connectWebRTC(store.frameId);
+            }
+        };
+
+        ws.on('LOBBY_RETURNED', onLobbyReturned);
+
         ws.on('FRAME_DESTROYED', onFrameDestroyed);
 
         return () => {
@@ -509,6 +529,7 @@ function FunVideoContent() {
             ws.off('CANVAS_MOVE', onCanvasEvent);
             ws.off('CANVAS_END', onCanvasEvent);
             ws.off('FRAME_DESTROYED', onFrameDestroyed);
+            ws.off('LOBBY_RETURNED', onLobbyReturned);
             ws.off('ERROR', onError);
             ws.off('MATCHMAKING_STARTED', onMatchmakingStarted);
             WebRtcService.getInstance().disconnectAll();
@@ -646,6 +667,21 @@ function FunVideoContent() {
         sessionStorage.removeItem('funfram_autostart');
     };
 
+    const handleReturnToLobby = () => {
+        const store = useCallStore.getState();
+        // Putuskan WebRTC match — akan dikoneksi ulang ke lobby oleh LOBBY_RETURNED handler
+        WebRtcService.getInstance().disconnectAll();
+        // Kirim event ke backend: bersihkan match/search, kembalikan ke lobby
+        if (store.frameId) {
+            WebSocketService.getInstance().sendEvent('RETURN_TO_LOBBY', {
+                frameId: store.frameId,
+                sessionId: store.sessionId,
+            });
+        }
+        // Hapus query params
+        window.history.replaceState({}, '', '/funvideo');
+    };
+
     const handleMic = () => {
         if (audioTrackRef.current) {
             const nextMicEnabled = !isMicOn;
@@ -735,6 +771,7 @@ function FunVideoContent() {
                 {isAuthenticated && (
                     <Navigation
                         onLeave={handleLeave}
+                        onReturnToLobby={handleReturnToLobby}
                         onMic={handleMic}
                         onCam={handleCam}
                         isMicOn={isMicOn}

@@ -145,3 +145,12 @@
         right: 2px;
     }
 }
+
+.return-lobby-button {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+.return-lobby-button:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.2);
+}

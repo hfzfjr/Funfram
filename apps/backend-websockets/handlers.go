@@ -800,6 +800,57 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 			}
 			fmt.Printf("⚠️ REPORT USER: %s reported %s for: %s\n", client.Username, reportPayload.TargetUserID, reportPayload.Reason)
 
+		case "RETURN_TO_LOBBY":
+			// Return to lobby without destroying the frame.
+			if !client.IsLobbyOwner {
+				sendError(ws, "Only the Host can return to lobby")
+				continue
+			}
+
+			lobbyID := client.LobbyID
+			if lobbyID == "" {
+				continue
+			}
+
+			// 1. Cleanup match if currently matched, and notify partner
+			activeMatchID, otherLobbyID := cleanupMatchForLobby(hub, lobbyID)
+			if otherLobbyID != "" {
+				hub.broadcastEventToLobby(otherLobbyID, "MATCH_LEFT", map[string]interface{}{})
+				hub.broadcastEventToLobby(otherLobbyID, "PRESENCE_UPDATE", map[string]interface{}{
+					"frameId":  otherLobbyID,
+					"presence": "MATCHING",
+				})
+				// Put partner back in matchmaking so they get another match quickly
+				hub.AddToMatchmaking(otherLobbyID)
+			}
+			if db != nil && activeMatchID != "" {
+				_ = UpdateLobbyStatus(lobbyID, "WAITING")
+			}
+
+			// 2. Remove own lobby from matchmaking queue if it's in there
+			hub.mu.Lock()
+			newQueue := make([]*Lobby, 0, len(hub.waitingQueue))
+			for _, waitingLobby := range hub.waitingQueue {
+				if waitingLobby.ID != lobbyID {
+					newQueue = append(newQueue, waitingLobby)
+				}
+			}
+			hub.waitingQueue = newQueue
+
+			// 3. Reset lobby status to WAITING and member presence to ONLINE
+			if lobby, exists := hub.lobbies[lobbyID]; exists {
+				lobby.Status = "WAITING"
+				for _, member := range lobby.Members {
+					member.Presence = "ONLINE"
+				}
+			}
+			hub.mu.Unlock()
+
+			// 4. Broadcast LOBBY_RETURNED to all members in own lobby
+			hub.broadcastEventToLobby(lobbyID, "LOBBY_RETURNED", map[string]interface{}{
+				"frameId": lobbyID,
+			})
+
 		default:
 			fmt.Printf("Unknown message type: %s\n", msg.Event)
 		}

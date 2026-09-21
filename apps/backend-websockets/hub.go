@@ -184,7 +184,7 @@ func (h *Hub) JoinLobby(lobbyID, userID, username string, client *Client) error 
 		return fmt.Errorf("lobby not found")
 	}
 
-	if len(lobby.Members) >= 4 {
+	if len(lobby.Members) >= 2 {
 		return fmt.Errorf("lobby is full")
 	}
 
@@ -266,14 +266,26 @@ func (h *Hub) AddToMatchmaking(lobbyID string) {
 	
 	h.broadcastEventToLobby(lobbyID, "MATCHMAKING_STARTED", map[string]interface{}{})
 
+	// Count valid alternatives (excluding self and optionally last-match)
+	validAlternatives := 0
+	for _, waitingLobby := range h.waitingQueue {
+		if waitingLobby.ID != lobbyID && waitingLobby.Status == "WAITING" && len(waitingLobby.Members) > 0 {
+			validAlternatives++
+		}
+	}
+
 	// Check if there's a waiting lobby to match with
 	for i, waitingLobby := range h.waitingQueue {
 		if waitingLobby.ID != lobbyID && waitingLobby.Status == "WAITING" && len(waitingLobby.Members) > 0 {
-			if lobby.LastMatchLobbyID != "" && lobby.LastMatchLobbyID == waitingLobby.ID {
-				continue // Skip the last matched lobby to prevent instant rematch
-			}
-			if waitingLobby.LastMatchLobbyID != "" && waitingLobby.LastMatchLobbyID == lobby.ID {
-				continue // Skip the last matched lobby to prevent instant rematch
+			// Skip last-match only if there are 2+ alternatives (to prevent instant rematch).
+			// If only 1 alternative exists, match anyway to avoid infinite waiting.
+			if validAlternatives >= 2 {
+				if lobby.LastMatchLobbyID != "" && lobby.LastMatchLobbyID == waitingLobby.ID {
+					continue
+				}
+				if waitingLobby.LastMatchLobbyID != "" && waitingLobby.LastMatchLobbyID == lobby.ID {
+					continue
+				}
 			}
 			// Match found!
 			h.createMatch(lobby, waitingLobby)

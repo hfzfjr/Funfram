@@ -193,7 +193,7 @@ export const useCallStore = create<CallStore>((set, get) => ({
     addParticipant: (side, participant) => set((state) => {
         const list = side === 'left' ? state.leftParticipants : state.rightParticipants;
         if (list.some(p => p.id === participant.id)) return {};
-        if (list.length >= 4) return {};
+        if (list.length >= 2) return {};
 
         const updatedList = sortParticipants([...list, participant]);
 

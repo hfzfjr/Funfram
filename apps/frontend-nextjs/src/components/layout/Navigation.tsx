@@ -10,10 +10,12 @@ import ChatButton from '../ui/button/ChatButton';
 import GameButton from '../ui/button/GameButton';
 import SidebarChat from './SidebarChat';
 import GameInviteModal from '../ui/overlay/GameInviteModal';
+import ReturnToLobbyButton from '../ui/button/ReturnToLobbyButton';
 import './navigation.css';
 
 interface NavigationProps {
   onLeave?: () => void;
+  onReturnToLobby?: () => void;
   onMic?: () => void;
   onCam?: () => void;
   isMicOn?: boolean;
@@ -22,6 +24,7 @@ interface NavigationProps {
 
 export default function Navigation({
   onLeave,
+  onReturnToLobby,
   onMic,
   onCam,
   isMicOn = true,
@@ -83,11 +86,19 @@ export default function Navigation({
       <div className="navigation-overlay">
         <div className="navigation-content">
           {/* Start/Next Frame Button - Owner Only Control */}
-          {isOwner && (fsmState === 'FRAME' || fsmState === 'SEARCHING' || fsmState === 'MATCHED') && (
+          {isOwner && fsmState === 'FRAME' && (
             <NextFrameButton
               onClick={handleNextClick}
               disabled={nextButtonDisabled}
               text={nextButtonText}
+            />
+          )}
+
+          {/* Return to Lobby Button - Owner Only Control */}
+          {isOwner && (fsmState === 'SEARCHING' || fsmState === 'MATCHED') && (
+            <ReturnToLobbyButton
+              onClick={onReturnToLobby}
+              disabled={nextButtonDisabled}
             />
           )}
 
