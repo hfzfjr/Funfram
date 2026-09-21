@@ -241,6 +241,11 @@ export class WebRtcService {
         pc.oniceconnectionstatechange = () => {
             const timestamp = new Date().toISOString();
             console.log(`[WebRtcService][${timestamp}] ICE connection state with ${participantId}: ${pc.iceConnectionState} - Match/Session ID: ${this.currentRoomId}`);
+            
+            // Perbarui state di store (gunakan dinamis import atau event emitter)
+            import('@/store/useCallStore').then(module => {
+                module.useCallStore.getState().updateParticipantConnectionState(participantId, pc.iceConnectionState);
+            });
         };
 
         // Perfect Negotiation logic on negotiationneeded

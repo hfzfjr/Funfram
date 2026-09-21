@@ -16,6 +16,7 @@ export interface Participant {
     isOwner: boolean;
     presence: PresenceState;
     joinOrder: number; // Used for Ownership Transfer Algorithm
+    connectionState?: RTCIceConnectionState;
 }
 
 export type FrameSide = "left" | "right";

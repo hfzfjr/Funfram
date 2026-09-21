@@ -92,9 +92,9 @@ export interface CallStore {
     setSession: (session: Session | null) => void;
     handleOpponentLeft: (payload: { userId?: string; frameId?: string; sessionId?: string; reason?: string }) => void;
     triggerNextFrame: () => boolean; // returns true if action allowed (rate limited)
-    
-    showCustomAlert: (message: string, type?: 'error' | 'success' | 'info') => void;
+    showCustomAlert: (message: string, type?: 'success' | 'error' | 'info') => void;
     hideCustomAlert: () => void;
+    updateParticipantConnectionState: (id: string, connectionState: RTCIceConnectionState) => void;
 
     // Chat Actions
     sendGeneralMessage: (text: string) => void;
@@ -207,6 +207,18 @@ export const useCallStore = create<CallStore>((set, get) => ({
                     mic: !participant.isMuted,
                 },
             },
+        };
+    }),
+
+    updateParticipantConnectionState: (id, connectionState) => set((state) => {
+        const mapFunc = (p: Participant) => p.id === id ? { ...p, connectionState } : p;
+        const left = state.leftParticipants.map(mapFunc);
+        const right = state.rightParticipants.map(mapFunc);
+
+        return {
+            leftParticipants: left,
+            rightParticipants: right,
+            localUser: state.localUser?.id === id ? { ...state.localUser, connectionState } : state.localUser,
         };
     }),
 

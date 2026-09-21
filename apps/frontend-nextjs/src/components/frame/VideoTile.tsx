@@ -30,6 +30,14 @@ export default function VideoTile({ participant }: VideoTileProps) {
             .slice(0, 2);
     };
 
+    // Determine loading/connection state
+    const isConnecting = participant.connectionState === 'new' || participant.connectionState === 'checking';
+    const isReconnecting = participant.connectionState === 'disconnected' || participant.connectionState === 'failed';
+    const showLoading = (!isLocalVideo && (isConnecting || isReconnecting)) || !participant.stream;
+
+    let loadingText = 'Menghubungkan...';
+    if (isReconnecting) loadingText = 'Jaringan kurang bagus, menyambungkan kembali...';
+
     return (
         <div className={styles.container}>
             {participant.stream ? (
@@ -38,13 +46,21 @@ export default function VideoTile({ participant }: VideoTileProps) {
                     autoPlay
                     playsInline
                     muted={isLocalVideo || participant.isMuted}
-                    className={`${styles.video} ${isLocalVideo ? styles.mirrored : ''}`}
+                    className={`${styles.video} ${isLocalVideo ? styles.mirrored : ''} ${showLoading ? styles.blurred : ''}`}
                 />
             ) : (
                 <div className={styles.placeholder}>
                     <span className={styles.initials}>{getInitials(participant.name)}</span>
                 </div>
             )}
+            
+            {showLoading && (
+                <div className={styles.loadingOverlay}>
+                    <div className={styles.loadingSpinner}></div>
+                    <div className={styles.loadingText}>{loadingText}</div>
+                </div>
+            )}
+
             <div className={styles.overlay}>
                 <span className={styles.name}>{participant.name}</span>
                 <div className={styles.statusIcons}>
