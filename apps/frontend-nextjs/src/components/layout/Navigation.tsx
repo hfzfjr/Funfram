@@ -36,9 +36,11 @@ export default function Navigation({
 
   const fsmState = useCallStore((state) => state.fsmState);
   const localUser = useCallStore((state) => state.localUser);
+  const leftParticipants = useCallStore((state) => state.leftParticipants);
   const messageCount = useCallStore((state) => state.generalChat.length);
   const previousMessageCountRef = useRef(messageCount);
   const isOwner = localUser?.isOwner ?? false;
+  const isTeam = leftParticipants.length > 1;
 
   useEffect(() => {
     if (messageCount > previousMessageCountRef.current && !showSidebar) {
@@ -85,8 +87,8 @@ export default function Navigation({
     <>
       <div className="navigation-overlay">
         <div className="navigation-content">
-          {/* Start/Next Frame Button - Owner Only Control */}
-          {isOwner && fsmState === 'FRAME' && (
+          {/* Start/Next Frame Button - Always available for owner in FRAME, SEARCHING, MATCHED */}
+          {isOwner && (fsmState === 'FRAME' || fsmState === 'SEARCHING' || fsmState === 'MATCHED') && (
             <NextFrameButton
               onClick={handleNextClick}
               disabled={nextButtonDisabled}
@@ -94,8 +96,8 @@ export default function Navigation({
             />
           )}
 
-          {/* Return to Lobby Button - Owner Only Control */}
-          {isOwner && (fsmState === 'SEARCHING' || fsmState === 'MATCHED') && (
+          {/* Return to Lobby Button - Only when with invited friends (team) during SEARCHING or MATCHED */}
+          {isOwner && isTeam && (fsmState === 'SEARCHING' || fsmState === 'MATCHED') && (
             <ReturnToLobbyButton
               onClick={onReturnToLobby}
               disabled={nextButtonDisabled}

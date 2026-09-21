@@ -33,7 +33,11 @@ export default function VideoTile({ participant }: VideoTileProps) {
     // Determine loading/connection state
     const isConnecting = participant.connectionState === 'new' || participant.connectionState === 'checking';
     const isReconnecting = participant.connectionState === 'disconnected' || participant.connectionState === 'failed';
-    const showLoading = (!isLocalVideo && (isConnecting || isReconnecting)) || !participant.stream;
+    const showLoading = !isLocalVideo && (
+        isReconnecting || 
+        (!participant.isCameraOff && !participant.stream) ||
+        (isConnecting && !participant.stream)
+    );
 
     let loadingText = 'Menghubungkan...';
     if (isReconnecting) loadingText = 'Jaringan kurang bagus, menyambungkan kembali...';

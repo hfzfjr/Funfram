@@ -18,6 +18,7 @@ const iceServers = [
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
 ];
 
 // MENGATASI BUG: Sinkronisasi dynamic credential dari .env untuk Docker
@@ -25,13 +26,20 @@ const turnUrl  = process.env.TURN_SERVER_URL || 'turn:182.253.158.158:3478';
 const turnUser = process.env.TURN_USERNAME || 'funfram';
 const turnCred = process.env.TURN_CREDENTIAL || 'letsgooo_Funfram';
 
-// Tambahkan TURN (UDP/TCP port 3478)
-// NOTE: turns: (TLS port 5349) dihapus karena membutuhkan SSL certificate
-// yang belum dikonfigurasi di Coturn. Akan ditambahkan setelah setup TLS.
+// Tambahkan TURN Coturn Self-Hosted (UDP/TCP port 3478)
 iceServers.push(
     { urls: turnUrl, username: turnUser, credential: turnCred },
     // Tambahkan juga dengan TCP eksplisit sebagai fallback jika UDP diblokir provider
     { urls: turnUrl.replace('turn:', 'turn:') + '?transport=tcp', username: turnUser, credential: turnCred }
+);
+
+// Tambahkan Multi-Port Public TURN Servers (Ports 80 & 443 TCP/UDP)
+// KRUSIAL: Menembus CGNAT provider seluler (WiFi vs Paket Data) yang memblokir UDP 3478 / 49152-65535
+iceServers.push(
+    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
 );
 
 wss.on('connection', (ws) => {

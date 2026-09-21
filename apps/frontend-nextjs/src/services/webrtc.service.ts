@@ -1,3 +1,19 @@
+const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    // Coturn Self-Hosted (Port 3478 UDP + TCP)
+    { urls: 'turn:182.253.158.158:3478', username: 'funfram', credential: 'letsgooo_Funfram' },
+    { urls: 'turn:182.253.158.158:3478?transport=tcp', username: 'funfram', credential: 'letsgooo_Funfram' },
+    // Multi-port Public TURN (Ports 80 & 443 TCP/UDP)
+    // Menembus blokir port operator seluler (Telkomsel/Indosat/XL)
+    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+];
+
 export class WebRtcService {
     private static instance: WebRtcService;
     private peerConnections: Map<string, RTCPeerConnection> = new Map();
@@ -6,8 +22,8 @@ export class WebRtcService {
     private signalingSocket: WebSocket | null = null;
     private currentRoomId: string | null = null;
     private localUserId: string | null = null;
-    private iceServers: RTCIceServer[] = [];
-    private iceServersReady: boolean = false;
+    private iceServers: RTCIceServer[] = [...DEFAULT_ICE_SERVERS];
+    private iceServersReady: boolean = true;
     private pendingUserJoins: string[] = [];
     
     // For Perfect Negotiation
@@ -105,10 +121,25 @@ export class WebRtcService {
 
         switch (data.type) {
             case 'ice-servers':
-                this.iceServers = data.iceServers;
-                this.iceServersReady = true;
-                console.log('[WebRtcService] ICE servers configured:', this.iceServers.length, 'servers');
-                // Proses user-joined yang tertunda karena ICE servers belum siap
+                if (Array.isArray(data.iceServers) && data.iceServers.length > 0) {
+                    const validServers = data.iceServers.filter((s: any) => {
+                        const urlString = Array.isArray(s.urls) ? s.urls.join(',') : s.urls;
+                        return !urlString.includes('localhost');
+                    });
+                    this.iceServers = [...DEFAULT_ICE_SERVERS, ...validServers];
+                    this.iceServersReady = true;
+                    console.log('[WebRtcService] ICE servers configured:', this.iceServers.length, 'servers');
+                    // Perbarui konfigurasi pada peer connection yang sudah berjalan
+                    this.peerConnections.forEach((pc, id) => {
+                        try {
+                            pc.setConfiguration({ iceServers: this.iceServers });
+                            console.log(`[WebRtcService] Updated ICE servers on existing PC for: ${id}`);
+                        } catch (e) {
+                            console.warn('[WebRtcService] Error updating ice servers:', e);
+                        }
+                    });
+                }
+                // Proses user-joined yang tertunda jika ada
                 for (const userId of this.pendingUserJoins) {
                     console.log('[WebRtcService] Processing deferred user-joined:', userId);
                     this.createPeerConnection(userId, true);
@@ -118,14 +149,7 @@ export class WebRtcService {
 
             case 'user-joined':
                 console.log('[WebRtcService] User joined:', data.userId);
-                if (this.iceServersReady) {
-                    // ICE servers sudah siap, langsung buat koneksi
-                    this.createPeerConnection(data.userId, true);
-                } else {
-                    // ICE servers belum diterima, tunda dulu
-                    console.log('[WebRtcService] ICE servers not ready yet, deferring peer connection for:', data.userId);
-                    this.pendingUserJoins.push(data.userId);
-                }
+                this.createPeerConnection(data.userId, true);
                 break;
 
             case 'offer':
@@ -166,24 +190,15 @@ export class WebRtcService {
         const timestamp = new Date().toISOString();
         console.log(`[WebRtcService][${timestamp}] Creating peer connection with: ${participantId} - Match/Session ID: ${this.currentRoomId}`);
 
-        // Hanya tambahkan STUN dasar dari Google. Konfigurasi TURN harus berasal murni dari backend.
-        const fallbackIceServers: RTCIceServer[] = [
-            { urls: 'stun:stun.l.google.com:19302' }
-        ];
-
-        // Gabungkan ICE Servers dari backend dengan fallback
-        const finalIceServers = [...fallbackIceServers];
-        if (this.iceServers.length > 0) {
-            // Saring 'localhost' turn servers karena itu pasti salah konfigurasi dari backend
-            const validBackendServers = this.iceServers.filter(server => {
-                const urlString = Array.isArray(server.urls) ? server.urls.join(',') : server.urls;
-                return !urlString.includes('localhost');
-            });
-            finalIceServers.push(...validBackendServers);
-        }
+        // Gunakan gabungan ICE Servers lengkap (STUN Google + Coturn + OpenRelay Port 80/443)
+        const validServers = (this.iceServers || []).filter(server => {
+            const urlString = Array.isArray(server.urls) ? server.urls.join(',') : server.urls;
+            return !urlString.includes('localhost');
+        });
 
         const config: RTCConfiguration = {
-            iceServers: finalIceServers
+            iceServers: validServers.length > 0 ? validServers : DEFAULT_ICE_SERVERS,
+            iceCandidatePoolSize: 10,
         };
 
         const pc = new RTCPeerConnection(config);
@@ -246,6 +261,20 @@ export class WebRtcService {
             import('@/store/useCallStore').then(module => {
                 module.useCallStore.getState().updateParticipantConnectionState(participantId, pc.iceConnectionState);
             });
+
+            // Auto ICE restart jika iceConnectionState failed
+            if (pc.iceConnectionState === 'failed') {
+                const restarts = this.iceRestarts.get(participantId) || 0;
+                if (restarts < 3) {
+                    this.iceRestarts.set(participantId, restarts + 1);
+                    console.log(`[WebRtcService][${timestamp}] Triggering ICE restart (attempt ${restarts + 1}/3) for ${participantId} due to failed ICE.`);
+                    try {
+                        pc.restartIce();
+                    } catch (e) {
+                        console.error('[WebRtcService] restartIce error:', e);
+                    }
+                }
+            }
         };
 
         // Perfect Negotiation logic on negotiationneeded
@@ -276,10 +305,14 @@ export class WebRtcService {
             console.log(`[WebRtcService][${timestamp}] Connection state with ${participantId}: ${pc.connectionState} - Match/Session ID: ${this.currentRoomId}`);
             if (pc.connectionState === 'failed') {
                 const restarts = this.iceRestarts.get(participantId) || 0;
-                if (restarts < 1) {
+                if (restarts < 3) {
                     this.iceRestarts.set(participantId, restarts + 1);
-                    console.log(`[WebRtcService][${timestamp}] Triggering ICE restart (attempt 1) for ${participantId} due to failed state.`);
-                    pc.restartIce();
+                    console.log(`[WebRtcService][${timestamp}] Triggering ICE restart (attempt ${restarts + 1}/3) for ${participantId} due to failed state.`);
+                    try {
+                        pc.restartIce();
+                    } catch (e) {
+                        console.error('[WebRtcService] restartIce error:', e);
+                    }
                 } else {
                     console.error(`[WebRtcService][${timestamp}] ICE connection failed permanently for ${participantId}. No more ICE restarts to prevent negotiation loop.`);
                 }
@@ -440,9 +473,9 @@ export class WebRtcService {
         this.remoteStreams.clear();
         this.iceRestarts.clear();
         this.currentRoomId = null;
-        // Reset ICE server state agar koneksi baru menggunakan fresh config
-        this.iceServers = [];
-        this.iceServersReady = false;
+        // Reset ICE server state ke default siap pakai untuk sesi berikutnya
+        this.iceServers = [...DEFAULT_ICE_SERVERS];
+        this.iceServersReady = true;
         this.pendingUserJoins = [];
 
         if (this.signalingSocket) {
