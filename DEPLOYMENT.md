@@ -229,10 +229,21 @@ coturn:
 ### Update Firewall untuk TURN:
 
 ```bash
+# Port TURN signaling (handshake awal)
 sudo ufw allow 3478/udp
 sudo ufw allow 3478/tcp
+
+# Port TURNS (TLS) — wajib untuk browser yang membuka halaman HTTPS
 sudo ufw allow 5349/udp
 sudo ufw allow 5349/tcp
+
+# ✅ FIX: Port relay media (video/audio) — INI YANG SEBELUMNYA HILANG!
+# Coturn membuka port acak di range ini setelah handshake berhasil di 3478.
+# Jika range ini tidak dibuka, video tidak bisa melewati firewall meski TURN login berhasil.
+sudo ufw allow 49152:65535/udp
+
+sudo ufw reload
+sudo ufw status
 ```
 
 ## 7. Monitoring dan Maintenance

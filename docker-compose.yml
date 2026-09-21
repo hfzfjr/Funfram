@@ -50,8 +50,7 @@ services:
       - funfram-network
     restart: unless-stopped
 
-  # TURN Server - Coturn (Local TURN Server)
-  # TURN Server - Coturn (Local TURN Server)
+  # TURN Server - Coturn (Self-Hosted)
   coturn:
     image: coturn/coturn:4.6.2
     network_mode: "host"
@@ -65,12 +64,14 @@ services:
       - --listening-port=3478
       - --tls-port=5349
       - --listening-ip=0.0.0.0
-      - --external-ip=182.253.158.158
-      - --relay-ip=192.168.0.8
+      # FIX: Hanya gunakan --external-ip tanpa --relay-ip.
+      # --relay-ip=192.168.0.8 (IP lokal) sebelumnya menyebabkan browser
+      # mendapatkan IP private yang tidak bisa dijangkau dari internet.
+      - --external-ip=${SERVER_PUBLIC_IP}
       - --fingerprint
       - --lt-cred-mech
-      - --user=funfram:letsgooo_Funfram
-      - --realm=funfram.roomify.space
+      - --user=${TURN_USERNAME}:${TURN_CREDENTIAL}
+      - --realm=${TURN_REALM}
       - --min-port=49152
       - --max-port=65535
       - --log-file=stdout

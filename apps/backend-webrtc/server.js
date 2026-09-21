@@ -11,24 +11,28 @@ const wss = new WebSocket.Server({ port: PORT });
 // Variabel untuk menyimpan daftar ruangan dan anggotanya
 const rooms = {};
 
-// STUN servers configuration (Default bawaan Google)
+// STUN servers configuration (multiple untuk redundansi)
 const iceServers = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
 ];
 
 // MENGATASI BUG: Sinkronisasi dynamic credential dari .env untuk Docker
-const turnUrl = process.env.TURN_SERVER_URL || 'turn:182.253.158.158:3478';
+const turnUrl  = process.env.TURN_SERVER_URL || 'turn:182.253.158.158:3478';
 const turnUser = process.env.TURN_USERNAME || 'funfram';
 const turnCred = process.env.TURN_CREDENTIAL || 'letsgooo_Funfram';
 
-// Tambahkan TURN server ke list ICE servers
-iceServers.push({
-    urls: turnUrl,
-    username: turnUser,
-    credential: turnCred,
-});
+// Tambahkan TURN (UDP/TCP port 3478)
+// NOTE: turns: (TLS port 5349) dihapus karena membutuhkan SSL certificate
+// yang belum dikonfigurasi di Coturn. Akan ditambahkan setelah setup TLS.
+iceServers.push(
+    { urls: turnUrl, username: turnUser, credential: turnCred },
+    // Tambahkan juga dengan TCP eksplisit sebagai fallback jika UDP diblokir provider
+    { urls: turnUrl.replace('turn:', 'turn:') + '?transport=tcp', username: turnUser, credential: turnCred }
+);
 
 wss.on('connection', (ws) => {
     console.log('Klien WebRTC baru terhubung');
@@ -189,5 +193,5 @@ function handleDisconnect(ws) {
 }
 
 console.log(`WebRTC Signaling Server berjalan di port ${PORT}...`);
-console.log('STUN servers:', iceServers.filter(s => s.urls.includes('stun')).map(s => s.urls));
-console.log('TURN server terpasang:', turnUrl);
+console.log('STUN servers:', iceServers.filter(s => !s.username).map(s => s.urls));
+console.log('TURN server (UDP+TCP) :', turnUrl);
