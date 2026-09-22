@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { Participant } from '@/types/participant';
 import { useCallStore } from '@/store/useCallStore';
 import styles from './VideoTile.module.css';
@@ -11,15 +11,34 @@ export default function VideoTile({ participant }: VideoTileProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const localUserId = useCallStore((state) => state.localUser?.id);
     const isLocalVideo = participant.id === localUserId;
+    const [isAutoplayBlocked, setIsAutoplayBlocked] = useState(false);
 
     useEffect(() => {
         if (videoRef.current && participant.stream) {
             videoRef.current.srcObject = participant.stream;
-            videoRef.current.play().catch(() => {
-                // The browser may still wait for the user gesture; controls can retry camera.
-            });
+            const playPromise = videoRef.current.play();
+            if (playPromise !== undefined) {
+                playPromise.catch((error) => {
+                    console.warn('[VideoTile] Autoplay failed:', error.name, error.message);
+                    if (!isLocalVideo) {
+                        console.log('[VideoTile] Falling back to muted autoplay to ensure video frames render.');
+                        setIsAutoplayBlocked(true);
+                        if (videoRef.current) {
+                            videoRef.current.muted = true;
+                            videoRef.current.play().catch(e => console.error('[VideoTile] Muted fallback also failed:', e));
+                        }
+                    }
+                });
+            }
         }
-    }, [participant.stream]);
+    }, [participant.stream, isLocalVideo]);
+
+    const handleUnmute = () => {
+        if (videoRef.current) {
+            videoRef.current.muted = false;
+            setIsAutoplayBlocked(false);
+        }
+    };
 
     const getInitials = (name: string) => {
         return name
@@ -49,7 +68,7 @@ export default function VideoTile({ participant }: VideoTileProps) {
                     ref={videoRef}
                     autoPlay
                     playsInline
-                    muted={isLocalVideo || participant.isMuted}
+                    muted={isLocalVideo || participant.isMuted || isAutoplayBlocked}
                     className={`${styles.video} ${isLocalVideo ? styles.mirrored : ''} ${showLoading ? styles.blurred : ''}`}
                 />
             ) : (
@@ -62,6 +81,19 @@ export default function VideoTile({ participant }: VideoTileProps) {
                 <div className={styles.loadingOverlay}>
                     <div className={styles.loadingSpinner}></div>
                     <div className={styles.loadingText}>{loadingText}</div>
+                </div>
+            )}
+
+            {isAutoplayBlocked && (
+                <div className={styles.unmuteOverlay} onClick={handleUnmute}>
+                    <button className={styles.unmuteButton}>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                            <line x1="23" y1="9" x2="17" y2="15"></line>
+                            <line x1="17" y1="9" x2="23" y2="15"></line>
+                        </svg>
+                        Tap to Unmute
+                    </button>
                 </div>
             )}
 
