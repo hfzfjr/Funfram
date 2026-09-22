@@ -33,13 +33,12 @@ iceServers.push(
     { urls: turnUrl.replace('turn:', 'turn:') + '?transport=tcp', username: turnUser, credential: turnCred }
 );
 
-// Tambahkan Multi-Port Public TURN Servers (Ports 80 & 443 TCP/UDP)
-// KRUSIAL: Menembus CGNAT provider seluler (WiFi vs Paket Data) yang memblokir UDP 3478 / 49152-65535
+// Tambahkan Multi-Port untuk menembus CGNAT provider seluler yang memblokir UDP 3478
 iceServers.push(
-    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+    { urls: 'turn:182.253.158.158:8443', username: turnUser, credential: turnCred },
+    { urls: 'turn:182.253.158.158:8443?transport=tcp', username: turnUser, credential: turnCred },
+    { urls: 'turn:182.253.158.158:53', username: turnUser, credential: turnCred },
+    { urls: 'turn:182.253.158.158:53?transport=tcp', username: turnUser, credential: turnCred }
 );
 
 wss.on('connection', (ws) => {

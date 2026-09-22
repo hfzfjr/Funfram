@@ -6,12 +6,11 @@ const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
     // Coturn Self-Hosted (Port 3478 UDP + TCP)
     { urls: 'turn:182.253.158.158:3478', username: 'funfram', credential: 'letsgooo_Funfram' },
     { urls: 'turn:182.253.158.158:3478?transport=tcp', username: 'funfram', credential: 'letsgooo_Funfram' },
-    // Multi-port Public TURN (Ports 80 & 443 TCP/UDP)
-    // Menembus blokir port operator seluler (Telkomsel/Indosat/XL)
-    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+    // Coturn Self-Hosted (Port 8443 and 53) to bypass strict firewalls
+    { urls: 'turn:182.253.158.158:8443', username: 'funfram', credential: 'letsgooo_Funfram' },
+    { urls: 'turn:182.253.158.158:8443?transport=tcp', username: 'funfram', credential: 'letsgooo_Funfram' },
+    { urls: 'turn:182.253.158.158:53', username: 'funfram', credential: 'letsgooo_Funfram' },
+    { urls: 'turn:182.253.158.158:53?transport=tcp', username: 'funfram', credential: 'letsgooo_Funfram' }
 ];
 
 export class WebRtcService {
