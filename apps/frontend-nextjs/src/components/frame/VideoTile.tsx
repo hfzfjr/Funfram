@@ -51,15 +51,25 @@ export default function VideoTile({ participant }: VideoTileProps) {
 
     // Determine loading/connection state
     const isConnecting = participant.connectionState === 'new' || participant.connectionState === 'checking';
-    const isReconnecting = participant.connectionState === 'disconnected' || participant.connectionState === 'failed';
+    const isReconnecting = participant.connectionState === 'reconnecting';
+    const isIceRestarting = participant.connectionState === 'ice-restarting';
+    const isFailed = participant.connectionState === 'disconnected' || participant.connectionState === 'failed';
     const showLoading = !isLocalVideo && (
-        isReconnecting || 
+        isReconnecting ||
+        isIceRestarting ||
+        isFailed ||
         (!participant.isCameraOff && !participant.stream) ||
         (isConnecting && !participant.stream)
     );
 
     let loadingText = 'Menghubungkan...';
-    if (isReconnecting) loadingText = 'Jaringan kurang bagus, menyambungkan kembali...';
+    if (isReconnecting) loadingText = 'Jaringan berubah, menyambungkan ulang...';
+    if (isIceRestarting) loadingText = 'Mencoba menyambungkan kembali...';
+    if (isFailed) loadingText = 'Jaringan kurang bagus, menyambungkan kembali...';
+
+    // Network quality indicator
+    const showNetworkQuality = participant.networkQuality && participant.networkQuality !== 'good';
+    const networkQuality = participant.networkQuality || 'good';
 
     return (
         <div className={styles.container}>
@@ -76,11 +86,19 @@ export default function VideoTile({ participant }: VideoTileProps) {
                     <span className={styles.initials}>{getInitials(participant.name)}</span>
                 </div>
             )}
-            
+
             {showLoading && (
                 <div className={styles.loadingOverlay}>
                     <div className={styles.loadingSpinner}></div>
                     <div className={styles.loadingText}>{loadingText}</div>
+                </div>
+            )}
+
+            {showNetworkQuality && (
+                <div className={styles.networkQuality} title={`Kualitas jaringan: ${networkQuality === 'medium' ? 'Sedang' : 'Buruk'}`}>
+                    <div className={`${styles.networkBar} ${networkQuality === 'medium' ? styles.medium : styles.poor}`}></div>
+                    <div className={`${styles.networkBar} ${networkQuality === 'medium' ? styles.medium : ''}`}></div>
+                    <div className={`${styles.networkBar} ${networkQuality === 'medium' ? styles.medium : ''}`}></div>
                 </div>
             )}
 

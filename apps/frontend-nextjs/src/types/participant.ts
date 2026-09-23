@@ -1,4 +1,4 @@
-export type PresenceState = 
+export type PresenceState =
     | "ONLINE"
     | "MATCHING"
     | "PLAYING"
@@ -16,13 +16,14 @@ export interface Participant {
     isOwner: boolean;
     presence: PresenceState;
     joinOrder: number; // Used for Ownership Transfer Algorithm
-    connectionState?: RTCIceConnectionState;
+    connectionState?: RTCIceConnectionState | 'reconnecting' | 'ice-restarting';
+    networkQuality?: 'good' | 'medium' | 'poor';
 }
 
 export type FrameSide = "left" | "right";
 
 // Global Application FSM
-export type AppFsmState = 
+export type AppFsmState =
     | "HOME"
     | "FRAME"
     | "SEARCHING"

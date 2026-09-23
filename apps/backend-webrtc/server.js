@@ -22,7 +22,7 @@ const iceServers = [
 ];
 
 // MENGATASI BUG: Sinkronisasi dynamic credential dari .env untuk Docker
-const turnUrl  = process.env.TURN_SERVER_URL || 'turn:182.253.158.158:3478';
+const turnUrl = process.env.TURN_SERVER_URL || 'turn:182.253.158.158:3478';
 const turnUser = process.env.TURN_USERNAME || 'funfram';
 const turnCred = process.env.TURN_CREDENTIAL || 'letsgooo_Funfram';
 
@@ -39,6 +39,12 @@ iceServers.push(
     { urls: 'turn:182.253.158.158:8443?transport=tcp', username: turnUser, credential: turnCred },
     { urls: 'turn:182.253.158.158:53', username: turnUser, credential: turnCred },
     { urls: 'turn:182.253.158.158:53?transport=tcp', username: turnUser, credential: turnCred }
+);
+
+// Tambahkan TURNS di port 443 untuk jaringan strict (firewall kantor/kampus)
+// Domain turn.roomify.space adalah DNS-only record yang mengarah langsung ke 182.253.158.158
+iceServers.push(
+    { urls: 'turns:turn.roomify.space:443?transport=tcp', username: turnUser, credential: turnCred }
 );
 
 wss.on('connection', (ws) => {

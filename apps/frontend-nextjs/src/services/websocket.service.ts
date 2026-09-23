@@ -15,6 +15,10 @@ class WebSocketServiceClass {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private shouldReconnect = true;
   private url: string;
+  private reconnectAttempts = 0;
+  private maxReconnectDelay = 10000; // 10 seconds max
+  private onlineHandler: (() => void) | null = null;
+  private offlineHandler: (() => void) | null = null;
 
   private constructor() {
     // Resolve endpoint from env; fallback to default.
@@ -44,6 +48,7 @@ class WebSocketServiceClass {
 
     this.ws.onopen = () => {
       console.info('WebSocket connected');
+      this.reconnectAttempts = 0; // Reset reconnect attempts on successful connection
       this.clearReconnectTimer();
     };
 
@@ -79,10 +84,16 @@ class WebSocketServiceClass {
 
   private scheduleReconnect() {
     if (this.reconnectTimer) return; // already scheduled
+
+    // Exponential backoff: 1s, 2s, 4s, 8s, capped at 10s
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), this.maxReconnectDelay);
+    this.reconnectAttempts++;
+
+    console.info(`Scheduling reconnection in ${delay / 1000}s (attempt ${this.reconnectAttempts})`);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
-    }, 2000);
+    }, delay);
   }
 
   private clearReconnectTimer() {
@@ -137,6 +148,39 @@ class WebSocketServiceClass {
       this.ws = null;
     }
     console.info('WebSocket manually disconnected');
+  }
+
+  /** Setup network change listeners for early detection */
+  setupNetworkListeners() {
+    if (typeof window !== 'undefined') {
+      this.onlineHandler = () => {
+        console.info('Network detected as online - attempting to reconnect');
+        this.reconnectAttempts = 0;
+        this.connect();
+      };
+
+      this.offlineHandler = () => {
+        console.warn('Network detected as offline');
+        // Optionally trigger UI updates via store
+      };
+
+      window.addEventListener('online', this.onlineHandler);
+      window.addEventListener('offline', this.offlineHandler);
+    }
+  }
+
+  /** Remove network change listeners */
+  removeNetworkListeners() {
+    if (typeof window !== 'undefined') {
+      if (this.onlineHandler) {
+        window.removeEventListener('online', this.onlineHandler);
+        this.onlineHandler = null;
+      }
+      if (this.offlineHandler) {
+        window.removeEventListener('offline', this.offlineHandler);
+        this.offlineHandler = null;
+      }
+    }
   }
 }
 

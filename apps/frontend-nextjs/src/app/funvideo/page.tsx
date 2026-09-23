@@ -126,6 +126,9 @@ function FunVideoContent() {
         sessionStorage.removeItem('funfram_session');
         useCallStore.getState().reset();
 
+        // Setup network change listeners for early detection
+        ws.setupNetworkListeners();
+
         // Sync stream to local user participant when stream changes
         const syncStreamToParticipant = () => {
             const store = useCallStore.getState();
@@ -201,7 +204,7 @@ function FunVideoContent() {
         // ── FRAME_JOINED: server confirms someone joined ──────────────────────
         const onFrameJoined = (payload: any) => {
             const store = useCallStore.getState();
-            
+
             const members = payload.members.map((m: any) => ({
                 id: m.id || m.userId,
                 stream: (m.id || m.userId) === payload.joinedUserId ? localStreamRef.current : null,
@@ -228,7 +231,7 @@ function FunVideoContent() {
             store.setFsmState('FRAME');
             store.setFrameOwnerId(payload.ownerId);
             useCallStore.setState({ frameId: payload.frameId, inviteToken: null, leftParticipants: members });
-            
+
             sessionStorage.setItem('funfram_session', JSON.stringify({
                 userId: payload.joinedUserId,
                 username: local.name,
@@ -269,7 +272,7 @@ function FunVideoContent() {
                 joinOrder: p.joinOrder ?? 2,
             };
             useCallStore.getState().addParticipant('left', participant);
-            
+
             // Show alert instead of chat message
             setTopAlert(`${participantName} bergabung dalam frame`);
             setTimeout(() => {
@@ -285,7 +288,7 @@ function FunVideoContent() {
             // Putuskan koneksi lama terlebih dahulu agar tidak ada koneksi duplikat
             // (contoh: koneksi lobi masih aktif saat MATCH_FOUND tiba)
             webrtc.disconnectAll();
-            
+
             webrtc.setLocalStream(localStreamRef.current);
             webrtc.onRemoteStream((participantId, stream) => {
                 const currentStore = useCallStore.getState();
@@ -455,7 +458,7 @@ function FunVideoContent() {
         const onError = (payload: any) => {
             const errorMsg = payload.error || payload.message;
             console.error('Server error:', errorMsg);
-            
+
             if (errorMsg === 'lobby not found') {
                 useCallStore.getState().showCustomAlert('Tautan undangan sudah tidak valid karena pemilik telah keluar atau frame kadaluarsa.');
                 handleLeave();
@@ -534,6 +537,7 @@ function FunVideoContent() {
             ws.off('MATCHMAKING_STARTED', onMatchmakingStarted);
             WebRtcService.getInstance().disconnectAll();
             stopLocalMedia();
+            ws.removeNetworkListeners();
             ws.disconnect();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -1,4 +1,5 @@
 const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
+    // STUN servers (lightweight, no auth)
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
@@ -16,7 +17,7 @@ export class WebRtcService {
     private iceServers: RTCIceServer[] = [...DEFAULT_ICE_SERVERS];
     private iceServersReady: boolean = true;
     private pendingUserJoins: string[] = [];
-    
+
     // For Perfect Negotiation
     private makingOffer: Map<string, boolean> = new Map();
     private ignoreOffer: Map<string, boolean> = new Map();
@@ -24,8 +25,69 @@ export class WebRtcService {
     private pendingCandidates: Map<string, RTCIceCandidateInit[]> = new Map();
     private remoteStreams: Map<string, MediaStream> = new Map();
     private iceRestarts: Map<string, number> = new Map();
+    private statsPollingIntervals: Map<string, ReturnType<typeof setInterval>> = new Map();
+    private wasConnected: Map<string, boolean> = new Map();
 
     private constructor() { }
+
+    private classifyNetworkQuality(packetLoss: number, rtt: number): 'good' | 'medium' | 'poor' {
+        if (packetLoss < 2 && rtt < 150) return 'good';
+        if (packetLoss < 5 && rtt < 300) return 'medium';
+        return 'poor';
+    }
+
+    private startStatsPolling(participantId: string, pc: RTCPeerConnection) {
+        // Clear existing interval if any
+        this.stopStatsPolling(participantId);
+
+        const interval = setInterval(async () => {
+            if (pc.connectionState !== 'connected') {
+                this.stopStatsPolling(participantId);
+                return;
+            }
+
+            try {
+                const stats = await pc.getStats();
+                let packetsLost = 0;
+                let packetsReceived = 0;
+                let currentRoundTripTime = 0;
+                let jitter = 0;
+
+                stats.forEach(report => {
+                    if (report.type === 'inbound-rtp' && report.kind === 'video') {
+                        packetsLost = report.packetsLost || 0;
+                        packetsReceived = report.packetsReceived || 0;
+                        jitter = report.jitter || 0;
+                    }
+                    if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+                        currentRoundTripTime = report.currentRoundTripTime || 0;
+                    }
+                });
+
+                const packetLossPercent = packetsReceived > 0 ? (packetsLost / packetsReceived) * 100 : 0;
+                const rttMs = currentRoundTripTime * 1000; // Convert to milliseconds
+
+                const quality = this.classifyNetworkQuality(packetLossPercent, rttMs);
+
+                // Update store with network quality
+                import('@/store/useCallStore').then(module => {
+                    module.useCallStore.getState().updateParticipantNetworkQuality(participantId, quality);
+                });
+            } catch (error) {
+                console.error('[WebRtcService] Error getting stats:', error);
+            }
+        }, 4000); // Poll every 4 seconds
+
+        this.statsPollingIntervals.set(participantId, interval);
+    }
+
+    private stopStatsPolling(participantId: string) {
+        const interval = this.statsPollingIntervals.get(participantId);
+        if (interval) {
+            clearInterval(interval);
+            this.statsPollingIntervals.delete(participantId);
+        }
+    }
 
     public static getInstance(): WebRtcService {
         if (!WebRtcService.instance) {
@@ -36,7 +98,7 @@ export class WebRtcService {
 
     public setLocalStream(stream: MediaStream | null) {
         this.localStream = stream;
-        
+
         // Update existing peer connections if stream changes
         this.peerConnections.forEach((pc) => {
             if (this.localStream) {
@@ -197,7 +259,7 @@ export class WebRtcService {
         };
 
         const pc = new RTCPeerConnection(config);
-        
+
         // Perfect Negotiation states
         this.makingOffer.set(participantId, false);
         this.ignoreOffer.set(participantId, false);
@@ -217,7 +279,7 @@ export class WebRtcService {
         pc.ontrack = (event) => {
             const timestamp = new Date().toISOString();
             console.log(`[WebRtcService][${timestamp}] ontrack fired for ${participantId} - Match/Session ID: ${this.currentRoomId}, Track kind: ${event.track.kind}`);
-            
+
             let stream: MediaStream;
             if (event.streams && event.streams.length > 0) {
                 stream = event.streams[0];
@@ -226,7 +288,7 @@ export class WebRtcService {
                 stream.addTrack(event.track);
                 this.remoteStreams.set(participantId, stream);
             }
-            
+
             console.log(`[WebRtcService][${timestamp}] Remote stream updated from: ${participantId}`);
             if (this.onRemoteStreamCallback) {
                 this.onRemoteStreamCallback(participantId, stream);
@@ -235,6 +297,15 @@ export class WebRtcService {
 
         pc.onicecandidate = (event) => {
             if (event.candidate) {
+                // Debug logging for ICE candidates (temporary for verification)
+                console.log(`[WebRtcService] ICE Candidate for ${participantId}:`, {
+                    type: event.candidate.type,
+                    protocol: event.candidate.protocol,
+                    port: event.candidate.port,
+                    address: event.candidate.address,
+                    candidate: event.candidate.candidate
+                });
+
                 this.sendSignalingMessage({
                     type: 'ice-candidate',
                     candidate: event.candidate,
@@ -251,7 +322,19 @@ export class WebRtcService {
         pc.oniceconnectionstatechange = () => {
             const timestamp = new Date().toISOString();
             console.log(`[WebRtcService][${timestamp}] ICE connection state with ${participantId}: ${pc.iceConnectionState} - Match/Session ID: ${this.currentRoomId}`);
-            
+
+            const wasPreviouslyConnected = this.wasConnected.get(participantId) || false;
+            const isNowConnected = pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed';
+
+            if (isNowConnected && !wasPreviouslyConnected) {
+                this.wasConnected.set(participantId, true);
+            } else if (!isNowConnected && wasPreviouslyConnected) {
+                // Was connected, now disconnected - mark as reconnecting
+                import('@/store/useCallStore').then(module => {
+                    module.useCallStore.getState().updateParticipantConnectionState(participantId, 'reconnecting');
+                });
+            }
+
             // Perbarui state di store (gunakan dinamis import atau event emitter)
             import('@/store/useCallStore').then(module => {
                 module.useCallStore.getState().updateParticipantConnectionState(participantId, pc.iceConnectionState);
@@ -263,6 +346,9 @@ export class WebRtcService {
                 if (restarts < 3) {
                     this.iceRestarts.set(participantId, restarts + 1);
                     console.log(`[WebRtcService][${timestamp}] Triggering ICE restart (attempt ${restarts + 1}/3) for ${participantId} due to failed ICE.`);
+                    import('@/store/useCallStore').then(module => {
+                        module.useCallStore.getState().updateParticipantConnectionState(participantId, 'ice-restarting');
+                    });
                     try {
                         pc.restartIce();
                     } catch (e) {
@@ -281,7 +367,7 @@ export class WebRtcService {
                 await pc.setLocalDescription();
                 const offer = pc.localDescription;
                 if (!offer) return;
-                
+
                 console.log(`[WebRtcService][${timestamp}] setLocalDescription() success for ${participantId}`);
                 this.sendSignalingMessage({
                     type: 'offer',
@@ -298,7 +384,7 @@ export class WebRtcService {
         pc.onconnectionstatechange = () => {
             const timestamp = new Date().toISOString();
             console.log(`[WebRtcService][${timestamp}] Connection state with ${participantId}: ${pc.connectionState} - Match/Session ID: ${this.currentRoomId}`);
-            if (pc.connectionState === 'failed') {
+            if (pc.connectionState === 'failed' as any) {
                 const restarts = this.iceRestarts.get(participantId) || 0;
                 if (restarts < 3) {
                     this.iceRestarts.set(participantId, restarts + 1);
@@ -312,6 +398,10 @@ export class WebRtcService {
                     console.error(`[WebRtcService][${timestamp}] ICE connection failed permanently for ${participantId}. No more ICE restarts to prevent negotiation loop.`);
                 }
             } else if (pc.connectionState === 'connected') {
+                // Start periodic stats polling
+                this.startStatsPolling(participantId, pc);
+
+                // Log initial ICE pair info
                 pc.getStats().then(stats => {
                     stats.forEach(report => {
                         if (report.type === 'transport' && report.selectedCandidatePairId) {
@@ -324,6 +414,9 @@ export class WebRtcService {
                         }
                     });
                 });
+            } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'closed') {
+                // Stop stats polling when connection is not connected
+                this.stopStatsPolling(participantId);
             }
         };
 
@@ -349,14 +442,14 @@ export class WebRtcService {
             console.log(`[WebRtcService][${timestamp}] setRemoteDescription(offer) starting for ${sender}`);
             await pc.setRemoteDescription(new RTCSessionDescription(offer));
             console.log(`[WebRtcService][${timestamp}] setRemoteDescription(offer) success for ${sender}`);
-            
+
             // Flush pending ICE candidates
             await this.flushPendingIceCandidates(sender, pc);
 
             await pc.setLocalDescription();
             const answer = pc.localDescription;
             if (!answer) return;
-            
+
             console.log(`[WebRtcService][${timestamp}] setLocalDescription(answer) success for ${sender}`);
             this.sendSignalingMessage({
                 type: 'answer',
@@ -377,7 +470,7 @@ export class WebRtcService {
                 console.log(`[WebRtcService][${timestamp}] setRemoteDescription(answer) starting for ${sender}`);
                 await pc.setRemoteDescription(new RTCSessionDescription(answer));
                 console.log(`[WebRtcService][${timestamp}] setRemoteDescription(answer) success for ${sender}`);
-                
+
                 // Flush pending ICE candidates
                 await this.flushPendingIceCandidates(sender, pc);
             } catch (err) {
@@ -437,6 +530,8 @@ export class WebRtcService {
         const pc = this.peerConnections.get(participantId);
         if (pc) {
             console.log(`[WebRtcService][${timestamp}] Closing peer connection with: ${participantId} - Match/Session ID: ${this.currentRoomId}`);
+            this.stopStatsPolling(participantId);
+            this.wasConnected.delete(participantId);
             pc.close();
             this.peerConnections.delete(participantId);
             this.makingOffer.delete(participantId);
@@ -457,6 +552,7 @@ export class WebRtcService {
 
         this.peerConnections.forEach((pc, id) => {
             console.log(`[WebRtcService][${timestamp}] Closing peer connection with: ${id} - Match/Session ID: ${this.currentRoomId}`);
+            this.stopStatsPolling(id);
             pc.close();
             console.log(`[WebRtcService][${timestamp}] Disconnected ${id}`);
         });
@@ -467,6 +563,8 @@ export class WebRtcService {
         this.pendingCandidates.clear();
         this.remoteStreams.clear();
         this.iceRestarts.clear();
+        this.statsPollingIntervals.clear();
+        this.wasConnected.clear();
         this.currentRoomId = null;
         // Reset ICE server state ke default siap pakai untuk sesi berikutnya
         this.iceServers = [...DEFAULT_ICE_SERVERS];

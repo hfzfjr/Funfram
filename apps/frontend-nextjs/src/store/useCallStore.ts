@@ -61,7 +61,7 @@ export interface CallStore {
     // Participants
     leftParticipants: Participant[]; // Local Frame (Frame A)
     rightParticipants: Participant[]; // Remote Frame (Frame B)
-    
+
     customAlert: { message: string, visible: boolean, type: 'error' | 'success' | 'info' } | null;
 
     // Chats (Temporary, reset on leave)
@@ -94,7 +94,8 @@ export interface CallStore {
     triggerNextFrame: () => boolean; // returns true if action allowed (rate limited)
     showCustomAlert: (message: string, type?: 'success' | 'error' | 'info') => void;
     hideCustomAlert: () => void;
-    updateParticipantConnectionState: (id: string, connectionState: RTCIceConnectionState) => void;
+    updateParticipantConnectionState: (id: string, connectionState: RTCIceConnectionState | 'reconnecting' | 'ice-restarting') => void;
+    updateParticipantNetworkQuality: (id: string, quality: 'good' | 'medium' | 'poor') => void;
 
     // Chat Actions
     sendGeneralMessage: (text: string) => void;
@@ -162,7 +163,7 @@ export const useCallStore = create<CallStore>((set, get) => ({
     leftParticipants: [],
     rightParticipants: [],
     generalChat: [],
-    
+
     customAlert: null,
     gameInvite: null,
     gameState: null,
@@ -219,6 +220,18 @@ export const useCallStore = create<CallStore>((set, get) => ({
             leftParticipants: left,
             rightParticipants: right,
             localUser: state.localUser?.id === id ? { ...state.localUser, connectionState } : state.localUser,
+        };
+    }),
+
+    updateParticipantNetworkQuality: (id, quality) => set((state) => {
+        const mapFunc = (p: Participant) => p.id === id ? { ...p, networkQuality: quality } : p;
+        const left = state.leftParticipants.map(mapFunc);
+        const right = state.rightParticipants.map(mapFunc);
+
+        return {
+            leftParticipants: left,
+            rightParticipants: right,
+            localUser: state.localUser?.id === id ? { ...state.localUser, networkQuality: quality } : state.localUser,
         };
     }),
 
@@ -333,7 +346,7 @@ export const useCallStore = create<CallStore>((set, get) => ({
         } else {
             WebSocketService.getInstance().sendEvent('FRAME_NEXT', { frameId: state.frameId, sessionId: state.sessionId });
         }
-        
+
         state.rightParticipants.forEach(p => WebRtcService.getInstance().disconnectPeer(p.id));
 
         set({
@@ -348,11 +361,11 @@ export const useCallStore = create<CallStore>((set, get) => ({
         });
         return true;
     },
-    
+
     showCustomAlert: (message, type = 'error') => {
         set({ customAlert: { message, visible: true, type } });
     },
-    
+
     hideCustomAlert: () => {
         set((state) => ({
             customAlert: state.customAlert ? { ...state.customAlert, visible: false } : null

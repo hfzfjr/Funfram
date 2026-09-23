@@ -55,26 +55,19 @@ services:
     image: coturn/coturn:4.6.2
     network_mode: "host"
     restart: unless-stopped
+    cap_add:
+      - NET_BIND_SERVICE
+    volumes:
+      - ./infrastructure/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     environment:
       - TURN_USERNAME=${TURN_USERNAME}
       - TURN_CREDENTIAL=${TURN_CREDENTIAL}
       - SERVER_PUBLIC_IP=${SERVER_PUBLIC_IP}
     command:
       - turnserver
-      - -n
-      - --listening-port=3478
-      - --alt-listening-port=8443
-      - --tls-listening-port=53
-      - --listening-ip=0.0.0.0
-      - --external-ip=182.253.158.158
-      - --fingerprint
-      - --lt-cred-mech
-      - --user=funfram:letsgooo_Funfram
-      - --realm=funfram.roomify.space
-      - --min-port=49152
-      - --max-port=65535
-      - --no-cli
-      - --log-file=stdout
+      - -c
+      - /etc/coturn/turnserver.conf
 
 networks:
   funfram-network:
