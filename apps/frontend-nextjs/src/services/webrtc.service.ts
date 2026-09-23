@@ -2,15 +2,7 @@ const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun.cloudflare.com:3478' },
-    // Coturn Self-Hosted (Port 3478 UDP + TCP)
-    { urls: 'turn:182.253.158.158:3478', username: 'funfram', credential: 'letsgooo_Funfram' },
-    { urls: 'turn:182.253.158.158:3478?transport=tcp', username: 'funfram', credential: 'letsgooo_Funfram' },
-    // Coturn Self-Hosted (Port 8443 and 53) to bypass strict firewalls
-    { urls: 'turn:182.253.158.158:8443', username: 'funfram', credential: 'letsgooo_Funfram' },
-    { urls: 'turn:182.253.158.158:8443?transport=tcp', username: 'funfram', credential: 'letsgooo_Funfram' },
-    { urls: 'turn:182.253.158.158:53', username: 'funfram', credential: 'letsgooo_Funfram' },
-    { urls: 'turn:182.253.158.158:53?transport=tcp', username: 'funfram', credential: 'letsgooo_Funfram' }
+    { urls: 'stun:stun.cloudflare.com:3478' }
 ];
 
 export class WebRtcService {
@@ -189,15 +181,19 @@ export class WebRtcService {
         const timestamp = new Date().toISOString();
         console.log(`[WebRtcService][${timestamp}] Creating peer connection with: ${participantId} - Match/Session ID: ${this.currentRoomId}`);
 
-        // Gunakan gabungan ICE Servers lengkap (STUN Google + Coturn + OpenRelay Port 80/443)
+        // Gunakan gabungan ICE Servers lengkap (STUN Google + Coturn)
         const validServers = (this.iceServers || []).filter(server => {
             const urlString = Array.isArray(server.urls) ? server.urls.join(',') : server.urls;
             return !urlString.includes('localhost');
         });
 
+        // Debug mode: force relay if localStorage flag is set
+        const forceRelay = typeof window !== 'undefined' && localStorage.getItem('FORCE_RELAY') === 'true';
+
         const config: RTCConfiguration = {
             iceServers: validServers.length > 0 ? validServers : DEFAULT_ICE_SERVERS,
             iceCandidatePoolSize: 10,
+            ...(forceRelay ? { iceTransportPolicy: 'relay' } : {}),
         };
 
         const pc = new RTCPeerConnection(config);
