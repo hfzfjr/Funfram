@@ -14,11 +14,7 @@
     object-position: center; /* Default center untuk desktop */
 }
 
-@media (max-width: 768px) {
-    .video {
-        object-position: center 70%; /* Agak turunan sedikit khusus untuk mobile */
-    }
-}
+    /* Uniform cropping across all platforms when forced to 1:1 square */
 
 .video.mirrored {
     transform: scaleX(-1);

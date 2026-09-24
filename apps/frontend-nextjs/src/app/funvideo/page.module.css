@@ -18,12 +18,14 @@
 
 @media (max-width: 768px) {
     .container {
-        height: auto;
-        min-height: 100vh;
-        overflow-y: auto;
+        height: 100vh;
+        height: 100dvh; /* use dynamic viewport height to avoid browser URL bar issues */
+        overflow: hidden;
     }
     
     .content {
-        overflow-y: visible;
+        /* Reduce padding-bottom since we can overlap the controls slightly or use absolute controls */
+        padding-bottom: 90px; 
+        overflow: hidden;
     }
 }
