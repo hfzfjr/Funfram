@@ -280,16 +280,22 @@ export class WebRtcService {
             const timestamp = new Date().toISOString();
             console.log(`[WebRtcService][${timestamp}] ontrack fired for ${participantId} - Match/Session ID: ${this.currentRoomId}, Track kind: ${event.track.kind}`);
 
-            let stream: MediaStream;
-            if (event.streams && event.streams.length > 0) {
-                stream = event.streams[0];
+            // Always create a new MediaStream reference so React detects the state change
+            let stream = this.remoteStreams.get(participantId);
+            if (!stream) {
+                stream = event.streams && event.streams.length > 0 ? event.streams[0] : new MediaStream();
             } else {
-                stream = this.remoteStreams.get(participantId) || new MediaStream();
-                stream.addTrack(event.track);
-                this.remoteStreams.set(participantId, stream);
+                // Force a new reference containing all previous tracks + the new one
+                stream = new MediaStream(stream.getTracks());
             }
+            
+            if (!stream.getTracks().includes(event.track)) {
+                stream.addTrack(event.track);
+            }
+            
+            this.remoteStreams.set(participantId, stream);
 
-            console.log(`[WebRtcService][${timestamp}] Remote stream updated from: ${participantId}`);
+            console.log(`[WebRtcService][${timestamp}] Remote stream updated from: ${participantId}, Tracks: ${stream.getTracks().length}`);
             if (this.onRemoteStreamCallback) {
                 this.onRemoteStreamCallback(participantId, stream);
             }
@@ -566,9 +572,9 @@ export class WebRtcService {
         this.statsPollingIntervals.clear();
         this.wasConnected.clear();
         this.currentRoomId = null;
-        // Reset ICE server state ke default siap pakai untuk sesi berikutnya
-        this.iceServers = [...DEFAULT_ICE_SERVERS];
-        this.iceServersReady = true;
+        // Do NOT reset iceServers to ensure TURN configuration persists across matches
+        // this.iceServers = [...DEFAULT_ICE_SERVERS];
+        // this.iceServersReady = true;
         this.pendingUserJoins = [];
 
         if (this.signalingSocket) {

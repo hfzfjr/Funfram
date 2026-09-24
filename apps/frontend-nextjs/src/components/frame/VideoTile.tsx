@@ -14,6 +14,15 @@ export default function VideoTile({ participant }: VideoTileProps) {
     const [isAutoplayBlocked, setIsAutoplayBlocked] = useState(false);
 
     useEffect(() => {
+        if (videoRef.current) {
+            const shouldBeMuted = isLocalVideo || participant.isMuted || isAutoplayBlocked;
+            if (videoRef.current.muted !== shouldBeMuted) {
+                videoRef.current.muted = shouldBeMuted;
+            }
+        }
+    }, [participant.isMuted, isLocalVideo, isAutoplayBlocked]);
+
+    useEffect(() => {
         if (videoRef.current && participant.stream) {
             videoRef.current.srcObject = participant.stream;
             const playPromise = videoRef.current.play();
