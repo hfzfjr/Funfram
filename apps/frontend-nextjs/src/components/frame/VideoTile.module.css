@@ -11,7 +11,7 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
-    object-position: center 30%; /* Shift up slightly to avoid cutting off faces */
+    object-position: center 70%; /* Agak turunan sedikit (fokus ke bagian bawah/tengah video) */
 }
 
 .video.mirrored {

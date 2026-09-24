@@ -54,11 +54,18 @@
 @media (max-width: 768px) {
     .container {
         flex-direction: column;
-        gap: 8px; /* Tighter gap on mobile */
-        padding: 8px 8px 90px 8px; /* Enough padding at bottom for the navigation bar */
+        gap: 8px;
+        padding: 8px 0 90px 0; /* No left/right padding */
+        align-items: center;
+        justify-content: center; /* Center vertically if there's extra space */
     }
     
     .side {
+        /* Square constraint: width is 100% of container, but never larger than half the height */
+        width: 100%;
+        max-width: calc((100vh - 120px) / 2);
+        aspect-ratio: 1 / 1;
+        flex: none;
         border-radius: 12px;
     }
 }
