@@ -117,7 +117,7 @@
     width: 280px;
     height: 100vh;
     background: #181920;
-    box-shadow: 4px 0 24px rgba(0,0,0,0.5);
+
     display: flex;
     flex-direction: column;
     padding: 24px;

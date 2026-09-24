@@ -54,11 +54,11 @@
 @media (max-width: 768px) {
     .container {
         flex-direction: column;
-        gap: 16px;
-        padding: 16px 16px 8px 16px;
+        gap: 8px; /* Tighter gap on mobile */
+        padding: 8px 8px 90px 8px; /* Enough padding at bottom for the navigation bar */
     }
     
     .side {
-        border-radius: 16px;
+        border-radius: 12px;
     }
 }
