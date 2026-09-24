@@ -55,15 +55,14 @@
     .container {
         flex-direction: column;
         gap: 8px;
-        padding: 8px 0 90px 0; /* No left/right padding */
+        padding: 8px; /* Small uniform padding */
         align-items: center;
         justify-content: center; /* Center vertically if there's extra space */
     }
     
     .side {
-        /* Square constraint: width is 100% of container, but never larger than half the height */
+        /* Square frame, full width */
         width: 100%;
-        max-width: calc((100vh - 120px) / 2);
         aspect-ratio: 1 / 1;
         flex: none;
         border-radius: 12px;

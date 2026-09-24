@@ -7,11 +7,23 @@
     overflow: hidden;
 }
 
-/* Offset the fixed navbar (88px) */
+/* The content takes the remaining space after the navbar */
 .content {
     flex: 1;
-    margin-top: 88px;
+    /* margin-top removed because navbar is in normal flow */
     /* bottom padding to avoid overlap with the floating control bar (~96px tall + 24px margin) */
     padding-bottom: 120px;
     overflow: hidden;
+}
+
+@media (max-width: 768px) {
+    .container {
+        height: auto;
+        min-height: 100vh;
+        overflow-y: auto;
+    }
+    
+    .content {
+        overflow-y: visible;
+    }
 }
