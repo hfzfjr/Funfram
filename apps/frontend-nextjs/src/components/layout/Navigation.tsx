@@ -5,7 +5,6 @@ import { useCallStore } from '@/store/useCallStore';
 import NextFrameButton from '../ui/button/NextFrameButton';
 import LeaveFrameButton from '../ui/button/LeaveFrameButton';
 import MicrophoneButton from '../ui/button/MicrophoneButton';
-import CameraButton from '../ui/button/CameraButton';
 import ChatButton from '../ui/button/ChatButton';
 import GameButton from '../ui/button/GameButton';
 import SidebarChat from './SidebarChat';
@@ -117,7 +116,6 @@ export default function Navigation({
           <div className="separator"></div>
 
           <MicrophoneButton onClick={onMic} isOn={isMicOn} />
-          <CameraButton onClick={onCam} isOn={isCamOn} />
 
           <div className="separator"></div>
 
