@@ -46,6 +46,8 @@ services:
       - TURN_SERVER_URL=${TURN_SERVER_URL:-}
       - TURN_USERNAME=${TURN_USERNAME:-funfram}
       - TURN_CREDENTIAL=${TURN_CREDENTIAL:-funfram_secret}
+      - METERED_DOMAIN=${METERED_DOMAIN:-}
+      - METERED_API_KEY=${METERED_API_KEY:-}
     networks:
       - funfram-network
     restart: unless-stopped
