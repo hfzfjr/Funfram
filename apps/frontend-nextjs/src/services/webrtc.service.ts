@@ -271,6 +271,17 @@ export class WebRtcService {
         const pc = this.getPeerConnection(participantId);
         try {
             console.log(`[WebRtcService][${timestamp}] Server assigned as offerer. Creating offer for ${participantId}`);
+            
+            // Add local tracks via transceivers for robust negotiation (ONLY as Offerer)
+            if (this.localStream) {
+                this.localStream.getTracks().forEach(track => {
+                    pc.addTransceiver(track, { direction: 'sendrecv', streams: [this.localStream!] });
+                });
+            } else {
+                pc.addTransceiver('video', { direction: 'sendrecv' });
+                pc.addTransceiver('audio', { direction: 'sendrecv' });
+            }
+
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
             
@@ -315,20 +326,23 @@ export class WebRtcService {
         this.isSettingRemoteAnswerPending.set(participantId, false);
         this.iceRestarts.set(participantId, 0);
 
-        // Add local tracks via transceivers for robust negotiation
-        if (this.localStream) {
-            this.localStream.getTracks().forEach(track => {
-                pc.addTransceiver(track, { direction: 'sendrecv', streams: [this.localStream!] });
-            });
-        } else {
-            pc.addTransceiver('video', { direction: 'sendrecv' });
-            pc.addTransceiver('audio', { direction: 'sendrecv' });
-        }
-
         pc.ontrack = (event) => {
             const timestamp = new Date().toISOString();
             console.log(`[WebRtcService][${timestamp}] ontrack fired for ${participantId} - Match/Session ID: ${this.currentRoomId}, Track kind: ${event.track.kind}`);
-            // Let forceBindReceivers handle track binding robustly after setRemoteDescription
+            
+            let stream = this.remoteStreams.get(participantId);
+            if (!stream) {
+                stream = new MediaStream();
+            } else {
+                stream = new MediaStream(stream.getTracks());
+            }
+            if (!stream.getTracks().includes(event.track)) {
+                stream.addTrack(event.track);
+            }
+            this.remoteStreams.set(participantId, stream);
+            if (this.onRemoteStreamCallback) {
+                this.onRemoteStreamCallback(participantId, stream);
+            }
         };
 
         pc.onicecandidate = (event) => {
@@ -461,6 +475,14 @@ export class WebRtcService {
 
             // Unconditionally bind receivers after parsing the remote description
             this.forceBindReceivers(sender, pc);
+
+            // For the Answerer, transceivers were just created by setRemoteDescription.
+            // We must now attach our local media to them before creating the Answer!
+            if (this.localStream) {
+                this.localStream.getTracks().forEach(track => {
+                    pc.addTrack(track, this.localStream!);
+                });
+            }
 
             // Flush pending ICE candidates
             await this.flushPendingIceCandidates(sender, pc);
