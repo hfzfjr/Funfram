@@ -17,8 +17,7 @@
 .content {
     flex: 1;
     display: flex;
-    align-items: stretch;
-    justify-content: stretch;
+    flex-direction: column;
     padding-bottom: 96px; /* space for the dock on desktop */
     overflow: hidden;
     position: relative;
@@ -56,7 +55,6 @@
     .content {
         padding: 0;
         padding-bottom: 82px; /* space for the smaller control dock */
-        align-items: stretch; /* let CallLayout take full space */
         overflow: hidden;
     }
     
