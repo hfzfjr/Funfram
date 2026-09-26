@@ -63,6 +63,27 @@ wss.on('connection', (ws) => {
     ws.on('error', () => handleDisconnect(ws));
 });
 
+async function getIceServers() {
+    if (process.env.METERED_DOMAIN && process.env.METERED_API_KEY) {
+        try {
+            const url = `https://${process.env.METERED_DOMAIN}/api/v1/turn/credentials?apiKey=${process.env.METERED_API_KEY}`;
+            // Native fetch is available in Node.js 18+
+            const res = await fetch(url);
+            const meteredServers = await res.json();
+            return meteredServers;
+        } catch (err) {
+            console.error('Gagal mengambil Metered TURN:', err);
+        }
+    }
+
+    // Fallback lokal (yang tertahan oleh CGNAT)
+    const turnAuth = getTurnCredentials();
+    return [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: TURN_URLS, username: turnAuth.username, credential: turnAuth.credential }
+    ];
+}
+
 function handleJoin(ws, roomID, userId) {
     if (!rooms.has(roomID)) {
         rooms.set(roomID, new Set());
@@ -81,36 +102,30 @@ function handleJoin(ws, roomID, userId) {
     room.add(ws);
     console.log(`User ${ws.id} masuk ke ${roomID}. Total anggota: ${room.size}`);
 
-    // Kirim kredensial TURN yang aman ke client
-    const turnAuth = getTurnCredentials();
-    ws.send(JSON.stringify({
-        type: 'ice-servers',
-        iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' }, // 1 STUN saja cukup
-            { 
-                urls: TURN_URLS, 
-                username: turnAuth.username, 
-                credential: turnAuth.credential 
-            }
-        ]
-    }));
+    // Ambil kredensial TURN (Metered atau Lokal), lalu lanjutkan proses room
+    getIceServers().then(iceServers => {
+        ws.send(JSON.stringify({
+            type: 'ice-servers',
+            iceServers: iceServers
+        }));
 
-    // Beritahu client lain di dalam ruangan
-    forwardToPartner(ws, {
-        type: 'user-joined',
-        userId: ws.appUserId, // Memberitahu partner siapa yang bergabung
+        // Beritahu client lain di dalam ruangan
+        forwardToPartner(ws, {
+            type: 'user-joined',
+            userId: ws.appUserId, // Memberitahu partner siapa yang bergabung
+        });
+
+        // Jika room sudah berisi 2 orang, saatnya menunjuk Peran (Offerer & Answerer)
+        if (room.size === 2) {
+            const clients = Array.from(room);
+            const peerA = clients[0];
+            const peerB = clients[1];
+
+            // Wasit (Server) menunjuk siapa yang harus membuat Offer
+            peerA.send(JSON.stringify({ type: 'peer-ready', role: 'offerer', peerId: peerB.appUserId }));
+            peerB.send(JSON.stringify({ type: 'peer-ready', role: 'answerer', peerId: peerA.appUserId }));
+        }
     });
-
-    // Jika room sudah berisi 2 orang, saatnya menunjuk Peran (Offerer & Answerer)
-    if (room.size === 2) {
-        const clients = Array.from(room);
-        const peerA = clients[0];
-        const peerB = clients[1];
-
-        // Wasit (Server) menunjuk siapa yang harus membuat Offer
-        peerA.send(JSON.stringify({ type: 'peer-ready', role: 'offerer', peerId: peerB.appUserId }));
-        peerB.send(JSON.stringify({ type: 'peer-ready', role: 'answerer', peerId: peerA.appUserId }));
-    }
 }
 
 function forwardToPartner(senderWs, data) {
