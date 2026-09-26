@@ -14,15 +14,13 @@
     box-sizing: border-box;
     align-items: center;
     justify-content: center;
+    container-type: size;
 }
 
 .side {
-    /* Limit the size to ensure it doesn't overflow horizontally or vertically */
-    /* Width/Height is the minimum of: 
-       - half the screen width minus padding/gap
-       - the screen height minus header/footer height */
-    width: min(calc(50vw - 44px), calc(100vh - 240px));
-    height: min(calc(50vw - 44px), calc(100vh - 240px));
+    /* Maximize 1:1 boxes exactly to the container's available content space */
+    width: min(calc(50cqw - 12px), 100cqh);
+    height: min(calc(50cqw - 12px), 100cqh);
     aspect-ratio: 1 / 1;
     display: flex;
     flex-direction: column;
