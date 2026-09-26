@@ -63,6 +63,29 @@ export default function VideoTile({ participant }: VideoTileProps) {
         }
     };
 
+    // Auto-unmute on any user interaction with the document (good UX for bypassed autoplay)
+    useEffect(() => {
+        if (!isAutoplayBlocked) return;
+
+        const unlockAudio = () => {
+            handleUnmute();
+            // Remove listeners once unlocked
+            document.removeEventListener('click', unlockAudio);
+            document.removeEventListener('touchstart', unlockAudio);
+            document.removeEventListener('keydown', unlockAudio);
+        };
+
+        document.addEventListener('click', unlockAudio);
+        document.addEventListener('touchstart', unlockAudio);
+        document.addEventListener('keydown', unlockAudio);
+
+        return () => {
+            document.removeEventListener('click', unlockAudio);
+            document.removeEventListener('touchstart', unlockAudio);
+            document.removeEventListener('keydown', unlockAudio);
+        };
+    }, [isAutoplayBlocked]);
+
     const getInitials = (name: string) => {
         return name
             .split(' ')
@@ -125,18 +148,7 @@ export default function VideoTile({ participant }: VideoTileProps) {
                 </div>
             )}
 
-            {isAutoplayBlocked && (
-                <div className={styles.unmuteOverlay} onClick={handleUnmute}>
-                    <button className={styles.unmuteButton}>
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-                            <line x1="23" y1="9" x2="17" y2="15"></line>
-                            <line x1="17" y1="9" x2="23" y2="15"></line>
-                        </svg>
-                        Tap to Unmute
-                    </button>
-                </div>
-            )}
+            {/* Overlay Tap to Unmute dihapus demi UX. Audio akan otomatis aktif saat user menyentuh/klik layar */}
 
             <div className={styles.overlay}>
                 <span className={styles.name}>{participant.name}</span>
