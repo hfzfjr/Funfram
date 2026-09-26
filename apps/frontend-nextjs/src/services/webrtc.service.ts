@@ -100,7 +100,7 @@ export class WebRtcService {
         this.localStream = stream;
 
         // Update existing peer connections if stream changes
-        this.peerConnections.forEach((pc) => {
+        this.peerConnections.forEach((pc, participantId) => {
             if (this.localStream) {
                 // If we have transceivers, we can replace the track
                 const senders = pc.getSenders();
@@ -113,13 +113,36 @@ export class WebRtcService {
                         const emptyTransceiver = transceivers.find(t => t.sender.track === null && t.receiver.track.kind === track.kind);
                         if (emptyTransceiver) {
                             emptyTransceiver.sender.replaceTrack(track);
+                            emptyTransceiver.direction = 'sendrecv'; // Force upgrade
                         } else {
                             pc.addTrack(track, this.localStream!);
                         }
                     }
                 });
+
+                // Explicitly trigger renegotiation to ensure remote side receives the new tracks
+                // especially if the connection was established before the camera was granted.
+                if (pc.signalingState === 'stable' && (pc.connectionState === 'connected' || pc.iceConnectionState === 'connected')) {
+                    console.log('[WebRtcService] Forcing renegotiation after local stream update');
+                    this.forceRenegotiate(participantId);
+                }
             }
         });
+    }
+
+    private async forceRenegotiate(participantId: string) {
+        const pc = this.getPeerConnection(participantId);
+        try {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            this.sendSignalingMessage({
+                type: 'offer',
+                offer: pc.localDescription,
+                targetId: participantId,
+            });
+        } catch (err) {
+            console.error('[WebRtcService] Error forcing renegotiation:', err);
+        }
     }
 
     public onRemoteStream(callback: (participantId: string, stream: MediaStream) => void) {
