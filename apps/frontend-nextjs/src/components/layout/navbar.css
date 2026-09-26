@@ -1,4 +1,4 @@
-﻿/*
+/*
   Navbar - FunFram Header (95px height)
 */
 .navbar {
@@ -185,7 +185,7 @@
 
 @media (max-width: 768px) {
     .navbar {
-        height: 70px;
+        height: 64px;
         padding: 0 16px;
     }
 
@@ -202,4 +202,14 @@
     .navbar-left {
         gap: 8px;
     }
+
+    /* Hide FunFram logo text/image on mobile, only show hamburger and live dot */
+    .navbar-logo {
+        display: none;
+    }
+}
+
+/* Hide profile button as requested */
+.profile-btn {
+    display: none;
 }

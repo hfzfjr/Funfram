@@ -27,3 +27,15 @@
     border-radius: 1px;
     margin: 0 4px;
 }
+
+@media (max-width: 768px) {
+    .navigation-overlay {
+        bottom: 12px;
+        padding: 8px 16px;
+        height: 68px;
+        border-radius: 34px;
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+    }
+}

@@ -1,6 +1,7 @@
 .container {
     width: 100vw;
     height: 100vh;
+    height: 100dvh;
     background-color: var(--bg-deep-navy, #080D1D);
     background-image: 
         radial-gradient(circle at 10% 90%, rgba(124, 58, 237, 0.12) 0%, transparent 40%),
@@ -15,10 +16,12 @@
 /* The content takes the remaining space after the navbar */
 .content {
     flex: 1;
-    /* margin-top removed because navbar is in normal flow */
-    /* bottom padding to avoid overlap with the floating control bar (~96px tall + 24px margin) */
-    padding-bottom: 96px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-bottom: 96px; /* space for the dock on desktop */
     overflow: hidden;
+    position: relative;
 }
 
 .decorativeFooterLeft {
@@ -46,13 +49,14 @@
 @media (max-width: 768px) {
     .container {
         height: 100vh;
-        height: 100dvh; /* use dynamic viewport height to avoid browser URL bar issues */
+        height: 100dvh;
         overflow: hidden;
     }
     
     .content {
-        /* Reduce padding-bottom since we can overlap the controls slightly or use absolute controls */
-        padding-bottom: 90px; 
+        padding: 0;
+        padding-bottom: 82px; /* space for the smaller control dock */
+        align-items: stretch; /* let CallLayout take full space */
         overflow: hidden;
     }
     

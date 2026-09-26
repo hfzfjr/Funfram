@@ -28,18 +28,18 @@ export default function MeetingScene() {
 
     return (
         <div className={styles.container}>
-            {/* Left Frame: Local Frame (Frame A) always shown */}
-            <div className={styles.side}>
-                <FramePanel side="left" />
-            </div>
-
-            {/* Right Side: Remote Frame (Frame B) or Placeholder */}
-            <div className={styles.side}>
+            {/* Right Side: Remote Frame (Frame B) or Placeholder (Main on Mobile) */}
+            <div className={`${styles.side} ${styles.remoteSide}`}>
                 {showRightFrame ? (
                     <FramePanel side="right" />
                 ) : (
                     <PlaceholderTile showLogo={showLogo} text={placeholderText} />
                 )}
+            </div>
+
+            {/* Left Frame: Local Frame (Frame A) (PiP on Mobile) */}
+            <div className={`${styles.side} ${styles.localSide}`}>
+                <FramePanel side="left" />
             </div>
         </div>
     );
