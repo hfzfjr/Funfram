@@ -1,4 +1,4 @@
-/* PlaceholderTile: right panel dark card with centered watermark logo */
+/* PlaceholderTile: Clean flat design matching new UI */
 .container {
     width: 100%;
     height: 100%;
@@ -6,24 +6,83 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background-color: #2A2C36;
-    border-radius: 32px;
-    gap: 16px;
+    background-color: var(--bg-surface, #11182D);
+    border-radius: 24px;
+    gap: 32px;
     overflow: hidden;
+    position: relative;
+    border: 1px solid rgba(255,255,255,0.02);
 }
 
 .logo {
-    width: 220px;
-    height: 220px;
+    width: 160px;
+    height: 160px;
     object-fit: contain;
-    opacity: 0.2;
+    opacity: 0.1;
     user-select: none;
     pointer-events: none;
 }
 
+.textContainer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    text-align: center;
+}
+
 .text {
-    color: #a1a1aa;
-    font-size: 15px;
-    font-weight: 500;
+    color: var(--text-primary, #F8FAFC);
+    font-size: 18px;
+    font-weight: 600;
     letter-spacing: 0.01em;
+}
+
+.subtext {
+    color: var(--text-muted, #6F7B98);
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.searchingAnimationBox {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.pulseCircle {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--brand-gradient, linear-gradient(135deg, #00C6FF 0%, #3B82F6 45%, #A855F7 100%));
+    position: relative;
+    animation: pulseGlow 2s infinite cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.pulseCircle::before {
+    content: '';
+    position: absolute;
+    inset: -16px;
+    border-radius: 50%;
+    border: 2px solid rgba(59, 130, 246, 0.4);
+    animation: pulseRing 2s infinite cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.cameraIcon {
+    color: white;
+}
+
+@keyframes pulseGlow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+    50% { box-shadow: 0 0 40px 10px rgba(168, 85, 247, 0.2); }
+}
+
+@keyframes pulseRing {
+    0% { transform: scale(0.8); opacity: 0; }
+    50% { transform: scale(1.1); opacity: 1; }
+    100% { transform: scale(1.4); opacity: 0; }
 }

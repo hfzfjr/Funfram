@@ -1,6 +1,6 @@
 /*
   Floating bottom control bar.
-  Spec: centered, dark #191A21 pill, 24px from bottom, 5 buttons + 2 dividers.
+  Matches flat dark pill design.
 */
 .navigation-overlay {
     position: fixed;
@@ -8,22 +8,22 @@
     left: 50%;
     transform: translateX(-50%);
     z-index: 1000;
-    background: #191A21;
-    border-radius: 50px;
-    padding: 12px 20px;
-
+    background: #111827; /* Darker than background */
+    border-radius: 9999px;
+    padding: 12px 24px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .navigation-content {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
 }
 
 .separator {
     width: 1px;
-    height: 36px;
-    background: rgba(255, 255, 255, 0.12);
+    height: 32px;
+    background: rgba(255, 255, 255, 0.1);
     border-radius: 1px;
     margin: 0 4px;
 }

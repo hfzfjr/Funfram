@@ -56,17 +56,26 @@ export default function Navbar() {
                     </a>
                 </div>
 
-                {/* Right: Invite Friends button */}
-                <InviteFriendsButton
-                    onClick={() => {
-                        const { fsmState, showCustomAlert } = useCallStore.getState();
-                        if (fsmState === 'FRAME') {
-                            setShowInviteOverlay(true);
-                        } else {
-                            showCustomAlert('Kamu sedang mencari/berada di dalam match. Kembali ke lobby (tekan tombol Lobby) terlebih dahulu untuk mengundang teman.', 'error');
-                        }
-                    }}
-                />
+                {/* Right: Invite Friends button & Profile */}
+                <div className="navbar-right">
+                    <InviteFriendsButton
+                        onClick={() => {
+                            const { fsmState, showCustomAlert } = useCallStore.getState();
+                            if (fsmState === 'FRAME') {
+                                setShowInviteOverlay(true);
+                            } else {
+                                showCustomAlert('Kamu sedang mencari/berada di dalam match. Kembali ke lobby (tekan tombol Lobby) terlebih dahulu untuk mengundang teman.', 'error');
+                            }
+                        }}
+                    />
+                    
+                    <button className="profile-btn" aria-label="Profile">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                    </button>
+                </div>
             </nav>
 
             {/* Mobile Sidebar */}

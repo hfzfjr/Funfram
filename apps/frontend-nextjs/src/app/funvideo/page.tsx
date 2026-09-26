@@ -782,6 +782,14 @@ function FunVideoContent() {
                         isCamOn={isCamOn}
                     />
                 )}
+                
+                {/* Decorative Footers */}
+                <div className={styles.decorativeFooterLeft}>
+                    ♡ Good Vibes Only
+                </div>
+                <div className={styles.decorativeFooterRight}>
+                    Connect • Share • Be Yourself
+                </div>
             </div>
 
             <GameInviteNotification />

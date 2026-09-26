@@ -118,7 +118,7 @@ export default function VideoTile({ participant }: VideoTileProps) {
     const networkQuality = participant.networkQuality || 'good';
 
     return (
-        <div className={styles.container}>
+        <div className={`${styles.container} ${isLocalVideo ? styles.localContainer : ''}`}>
             {participant.stream ? (
                 <video
                     ref={videoRef}
@@ -151,8 +151,10 @@ export default function VideoTile({ participant }: VideoTileProps) {
             {/* Overlay Tap to Unmute dihapus demi UX. Audio akan otomatis aktif saat user menyentuh/klik layar */}
 
             <div className={styles.overlay}>
+                <div className={styles.liveIndicator}></div>
                 <span className={styles.name}>{participant.name}</span>
-                <div className={styles.statusIcons}>
+            </div>
+            <div className={styles.statusIcons}>
                     {participant.isMuted && (
                         <div className={styles.statusIcon} title="Microphone off">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

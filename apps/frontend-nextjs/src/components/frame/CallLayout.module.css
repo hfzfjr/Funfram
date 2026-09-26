@@ -1,15 +1,15 @@
 /*
   Two-column meeting layout.
-  Spec: 32px outer margin, 32px gap, height = remaining viewport, rounded 32px panels.
+  Strict 1:1 aspect ratio boxes.
 */
 .container {
     width: 100%;
     height: 100%;
     display: flex;
     flex-direction: row;
-    gap: 32px;
+    gap: 24px;
     padding: 0 32px 32px 32px;
-    background-color: #1F2028;
+    background-color: transparent;
     overflow: hidden;
     box-sizing: border-box;
     align-items: center;
@@ -18,14 +18,14 @@
 
 .side {
     aspect-ratio: 1 / 1;
-    width: 100%;
-    max-height: 100%;
-    max-width: calc(50% - 16px); /* account for gap */
+    width: auto;
+    height: 100%;
+    max-width: calc(50% - 12px);
     display: flex;
     flex-direction: column;
-    border-radius: 32px;
+    border-radius: 24px;
     overflow: hidden;
-    object-fit: cover;
+    background-color: #1e1e2f;
 }
 
 /* Searching state helpers (spinner) */
@@ -41,8 +41,8 @@
 .spinner {
     width: 48px;
     height: 48px;
-    border: 4px solid #2A2C36;
-    border-top-color: #08A7FD;
+    border: 4px solid #334155;
+    border-top-color: #8b5cf6;
     border-radius: 50%;
     animation: spin 1s linear infinite;
 }
@@ -52,7 +52,7 @@
 }
 
 .matchingText {
-    color: #a1a1aa;
+    color: #94a3b8;
     font-size: 16px;
     font-weight: 500;
 }
@@ -60,16 +60,19 @@
 @media (max-width: 768px) {
     .container {
         flex-direction: column;
-        gap: 8px;
-        padding: 8px;
+        gap: 12px;
+        padding: 12px;
     }
     
     .side {
-        height: 100%;
-        max-height: calc(50% - 4px); /* Half of available height minus half the gap */
         max-width: 100%;
+        max-height: calc(50vh - 75px); /* Half height minus navbar/controls space */
+        width: 100%;
+        height: auto;
         aspect-ratio: 1 / 1;
-        border-radius: 12px;
-        margin: 0 auto; /* Center horizontally if smaller than width */
+        border-radius: 16px;
+        margin: 0 auto;
+        /* Allow width to shrink to match aspect-ratio by overriding width if necessary */
+        object-fit: cover; 
     }
 }
