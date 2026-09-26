@@ -175,7 +175,6 @@ export default function VideoTile({ participant }: VideoTileProps) {
                         </div>
                     )}
                 </div>
-            </div>
         </div>
     );
 }
