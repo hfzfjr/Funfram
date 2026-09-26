@@ -274,9 +274,16 @@ export class WebRtcService {
             
             // Add local tracks via transceivers for robust negotiation (ONLY as Offerer)
             if (this.localStream) {
+                const hasVideo = this.localStream.getVideoTracks().length > 0;
+                const hasAudio = this.localStream.getAudioTracks().length > 0;
+                
                 this.localStream.getTracks().forEach(track => {
                     pc.addTransceiver(track, { direction: 'sendrecv', streams: [this.localStream!] });
                 });
+
+                // Guarantee two-way channels even if local hardware is missing one
+                if (!hasVideo) pc.addTransceiver('video', { direction: 'sendrecv' });
+                if (!hasAudio) pc.addTransceiver('audio', { direction: 'sendrecv' });
             } else {
                 pc.addTransceiver('video', { direction: 'sendrecv' });
                 pc.addTransceiver('audio', { direction: 'sendrecv' });
@@ -331,17 +338,24 @@ export class WebRtcService {
             console.log(`[WebRtcService][${timestamp}] ontrack fired for ${participantId} - Match/Session ID: ${this.currentRoomId}, Track kind: ${event.track.kind}`);
             
             let stream = this.remoteStreams.get(participantId);
+            let isNewStream = false;
             if (!stream) {
                 stream = new MediaStream();
-            } else {
-                stream = new MediaStream(stream.getTracks());
+                isNewStream = true;
             }
+            
             if (!stream.getTracks().includes(event.track)) {
                 stream.addTrack(event.track);
-            }
-            this.remoteStreams.set(participantId, stream);
-            if (this.onRemoteStreamCallback) {
-                this.onRemoteStreamCallback(participantId, stream);
+                // Only fire callback if we actually added a track
+                this.remoteStreams.set(participantId, stream);
+                if (this.onRemoteStreamCallback) {
+                    this.onRemoteStreamCallback(participantId, stream);
+                }
+            } else if (isNewStream) {
+                this.remoteStreams.set(participantId, stream);
+                if (this.onRemoteStreamCallback) {
+                    this.onRemoteStreamCallback(participantId, stream);
+                }
             }
         };
 
@@ -477,10 +491,22 @@ export class WebRtcService {
             this.forceBindReceivers(sender, pc);
 
             // For the Answerer, transceivers were just created by setRemoteDescription.
-            // We must now attach our local media to them before creating the Answer!
+            // We must now strictly attach our local media to them to prevent browser bugs
+            // where addTrack creates duplicate silent transceivers.
             if (this.localStream) {
+                const transceivers = pc.getTransceivers();
                 this.localStream.getTracks().forEach(track => {
-                    pc.addTrack(track, this.localStream!);
+                    const emptyTransceiver = transceivers.find(t => 
+                        t.receiver.track.kind === track.kind && t.sender.track === null
+                    );
+                    if (emptyTransceiver) {
+                        emptyTransceiver.sender.replaceTrack(track);
+                        if (emptyTransceiver.direction === 'recvonly') {
+                            emptyTransceiver.direction = 'sendrecv';
+                        }
+                    } else {
+                        pc.addTrack(track, this.localStream!);
+                    }
                 });
             }
 
@@ -533,12 +559,10 @@ export class WebRtcService {
         if (!stream) {
             stream = new MediaStream();
             changed = true;
-        } else {
-            stream = new MediaStream(stream.getTracks());
         }
         
         tracks.forEach(track => {
-            if (!stream!.getTracks().includes(track)) {
+            if (track && !stream!.getTracks().includes(track)) {
                 stream!.addTrack(track);
                 changed = true;
             }

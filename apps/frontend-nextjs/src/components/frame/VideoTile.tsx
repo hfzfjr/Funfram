@@ -42,7 +42,7 @@ export default function VideoTile({ participant }: VideoTileProps) {
                         }
                     }).catch((error) => {
                         console.warn('[VideoTile] Autoplay failed:', error.name, error.message);
-                        if (!isLocalVideo) {
+                        if (!isLocalVideo && error.name === 'NotAllowedError') {
                             console.log('[VideoTile] Falling back to muted autoplay to ensure video frames render.');
                             setIsAutoplayBlocked(true);
                             videoEl.muted = true;
