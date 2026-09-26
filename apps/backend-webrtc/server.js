@@ -1,210 +1,149 @@
 const WebSocket = require('ws');
+const crypto = require('crypto');
 const dotenv = require('dotenv');
 
-// Load environment variables
 dotenv.config();
 const PORT = process.env.PORT || 5002;
-
-// Buat server WebSocket khusus WebRTC
 const wss = new WebSocket.Server({ port: PORT });
 
-// Variabel untuk menyimpan daftar ruangan dan anggotanya
-const rooms = {};
+// State Management yang benar (Gunakan Map, bukan Object sembarangan)
+const rooms = new Map(); // roomID -> Set of WebSocket clients
 
-// STUN servers configuration (multiple untuk redundansi)
-const iceServers = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
-    { urls: 'stun:stun.cloudflare.com:3478' },
+// Rahasia TURN Server (Samakan dengan static-auth-secret di turnserver.conf)
+const TURN_SECRET = process.env.TURN_SECRET || 'rahasia_funfram_super_aman_123';
+const TURN_URLS = [
+    'turn:turn.roomify.space:3478?transport=udp',
+    'turn:turn.roomify.space:3478?transport=tcp',
+    'turns:turn.roomify.space:443?transport=tcp' // Wajib ada sertifikat SSL di Coturn
 ];
 
-// MENGATASI BUG: Sinkronisasi dynamic credential dari .env untuk Docker
-const turnUrl = process.env.TURN_SERVER_URL || 'turn:182.253.158.158:3478';
-const turnUser = process.env.TURN_USERNAME || 'funfram';
-const turnCred = process.env.TURN_CREDENTIAL || 'letsgooo_Funfram';
-
-// Tambahkan TURN Coturn Self-Hosted (UDP/TCP port 3478)
-iceServers.push(
-    { urls: turnUrl, username: turnUser, credential: turnCred },
-    // Tambahkan juga dengan TCP eksplisit sebagai fallback jika UDP diblokir provider
-    { urls: turnUrl.replace('turn:', 'turn:') + '?transport=tcp', username: turnUser, credential: turnCred }
-);
-
-// Tambahkan Multi-Port untuk menembus CGNAT provider seluler yang memblokir UDP 3478
-iceServers.push(
-    { urls: 'turn:182.253.158.158:8443', username: turnUser, credential: turnCred },
-    { urls: 'turn:182.253.158.158:8443?transport=tcp', username: turnUser, credential: turnCred },
-    { urls: 'turn:182.253.158.158:53', username: turnUser, credential: turnCred },
-    { urls: 'turn:182.253.158.158:53?transport=tcp', username: turnUser, credential: turnCred }
-);
-
-// Tambahkan TURNS di port 443 untuk jaringan strict (firewall kantor/kampus)
-// Domain turn.roomify.space adalah DNS-only record yang mengarah langsung ke 182.253.158.158
-iceServers.push(
-    { urls: 'turns:turn.roomify.space:443?transport=tcp', username: turnUser, credential: turnCred }
-);
+// Fungsi Generate Ephemeral TURN Credentials (TURN REST API)
+function getTurnCredentials() {
+    const unixTimeStamp = Math.floor(Date.now() / 1000) + (24 * 3600); // Expired dalam 24 Jam
+    const username = `${unixTimeStamp}:funfram_user`;
+    
+    const hmac = crypto.createHmac('sha1', TURN_SECRET);
+    hmac.update(username);
+    const credential = hmac.digest('base64');
+    
+    return { username, credential };
+}
 
 wss.on('connection', (ws) => {
-    console.log('Klien WebRTC baru terhubung');
-    ws.id = Math.random().toString(36).substr(2, 9);
+    ws.id = crypto.randomUUID(); // Connection ID aman dari server
+    ws.roomId = null; // Hanya 1 room per socket
 
     ws.on('message', (message) => {
         try {
             const data = JSON.parse(message);
             console.log(`Pesan dari ${ws.id}:`, data.type);
-
+            
             switch (data.type) {
                 case 'join':
-                    const roomID = data.roomID;
-                    ws.roomID = roomID;
-                    if (!ws.rooms) ws.rooms = new Set();
-                    ws.rooms.add(roomID);
-
-                    if (data.userId) {
-                        ws.id = data.userId;
-                    }
-
-                    if (!rooms[roomID]) {
-                        rooms[roomID] = [];
-                    }
-                    rooms[roomID].push(ws);
-                    console.log(`User ${ws.id} masuk ke ${roomID}. Total anggota: ${rooms[roomID].length}`);
-
-                    // Kirim konfigurasi ICE servers ke user yang baru bergabung
-                    ws.send(JSON.stringify({
-                        type: 'ice-servers',
-                        iceServers: iceServers,
-                    }));
-
-                    // Beritahu client lain di dalam ruangan
-                    broadcastToRoom(roomID, {
-                        type: 'user-joined',
-                        userId: ws.id,
-                    }, ws);
+                    handleJoin(ws, data.roomID, data.userId);
                     break;
-
                 case 'offer':
-                    if (data.targetId) {
-                        sendToUser(data.targetId, {
-                            type: 'offer',
-                            offer: data.offer,
-                            sender: ws.id,
-                        });
-                    } else if (ws.rooms) {
-                        for (const r of ws.rooms) {
-                            broadcastToRoom(r, {
-                                type: 'offer',
-                                offer: data.offer,
-                                sender: ws.id,
-                            }, ws);
-                        }
-                    }
-                    break;
-
                 case 'answer':
-                    if (data.targetId) {
-                        sendToUser(data.targetId, {
-                            type: 'answer',
-                            answer: data.answer,
-                            sender: ws.id,
-                        });
-                    } else if (ws.rooms) {
-                        for (const r of ws.rooms) {
-                            broadcastToRoom(r, {
-                                type: 'answer',
-                                answer: data.answer,
-                                sender: ws.id,
-                            }, ws);
-                        }
-                    }
-                    break;
-
                 case 'ice-candidate':
-                    if (data.targetId) {
-                        sendToUser(data.targetId, {
-                            type: 'ice-candidate',
-                            candidate: data.candidate,
-                            sender: ws.id,
-                        });
-                    } else if (ws.rooms) {
-                        for (const r of ws.rooms) {
-                            broadcastToRoom(r, {
-                                type: 'ice-candidate',
-                                candidate: data.candidate,
-                                sender: ws.id,
-                            }, ws);
-                        }
-                    }
+                    // Teruskan pesan HANYA ke partner di room yang SAMA
+                    forwardToPartner(ws, data);
                     break;
-
                 case 'leave':
                     handleDisconnect(ws);
                     break;
-
                 default:
                     console.log('Unknown message type:', data.type);
             }
         } catch (error) {
-            console.error('Error processing message:', error);
+            console.error('Error parsing message:', error);
         }
     });
 
-    ws.on('close', () => {
-        handleDisconnect(ws);
-    });
-
-    ws.on('error', (error) => {
-        console.error('WebSocket error:', error);
-        handleDisconnect(ws);
-    });
+    ws.on('close', () => handleDisconnect(ws));
+    ws.on('error', () => handleDisconnect(ws));
 });
 
-function broadcastToRoom(roomID, message, excludeWs = null) {
-    if (!rooms[roomID]) return;
-    rooms[roomID].forEach(client => {
-        if (client !== excludeWs && client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify(message));
-        }
-    });
-}
+function handleJoin(ws, roomID, userId) {
+    if (!rooms.has(roomID)) {
+        rooms.set(roomID, new Set());
+    }
+    
+    const room = rooms.get(roomID);
 
-function sendToUser(targetId, message) {
-    let target = null;
-    for (const client of wss.clients) {
-        if (client.id === targetId) {
-            target = client;
-            break;
-        }
+    // Limit Maksimal 2 Orang per Room (PENTING untuk 1:1)
+    if (room.size >= 2) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Room is full' }));
+        return;
     }
 
-    if (target && target.readyState === WebSocket.OPEN) {
-        target.send(JSON.stringify(message));
-    } else {
-        console.log(`Target user ${targetId} not found or connection closed`);
+    ws.roomId = roomID;
+    ws.appUserId = userId; // Optional: Simpan userId aplikasi untuk identifikasi
+    room.add(ws);
+    console.log(`User ${ws.id} masuk ke ${roomID}. Total anggota: ${room.size}`);
+
+    // Kirim kredensial TURN yang aman ke client
+    const turnAuth = getTurnCredentials();
+    ws.send(JSON.stringify({
+        type: 'ice-servers',
+        iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' }, // 1 STUN saja cukup
+            { 
+                urls: TURN_URLS, 
+                username: turnAuth.username, 
+                credential: turnAuth.credential 
+            }
+        ]
+    }));
+
+    // Beritahu client lain di dalam ruangan
+    forwardToPartner(ws, {
+        type: 'user-joined',
+        userId: ws.appUserId, // Memberitahu partner siapa yang bergabung
+    });
+
+    // Jika room sudah berisi 2 orang, saatnya menunjuk Peran (Offerer & Answerer)
+    if (room.size === 2) {
+        const clients = Array.from(room);
+        const peerA = clients[0];
+        const peerB = clients[1];
+
+        // Wasit (Server) menunjuk siapa yang harus membuat Offer
+        peerA.send(JSON.stringify({ type: 'peer-ready', role: 'offerer', peerId: peerB.appUserId }));
+        peerB.send(JSON.stringify({ type: 'peer-ready', role: 'answerer', peerId: peerA.appUserId }));
+    }
+}
+
+function forwardToPartner(senderWs, data) {
+    if (!senderWs.roomId || !rooms.has(senderWs.roomId)) return;
+    
+    const room = rooms.get(senderWs.roomId);
+    for (const client of room) {
+        if (client !== senderWs && client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify(data));
+        }
     }
 }
 
 function handleDisconnect(ws) {
-    if (ws.roomID && rooms[ws.roomID]) {
-        rooms[ws.roomID] = rooms[ws.roomID].filter(client => client !== ws);
-        console.log(`User ${ws.id} keluar dari ${ws.roomID}. Sisa: ${rooms[ws.roomID].length}`);
+    if (!ws.roomId || !rooms.has(ws.roomId)) return;
 
-        broadcastToRoom(ws.roomID, {
-            type: 'user-left',
-            userId: ws.id,
-        });
+    const room = rooms.get(ws.roomId);
+    room.delete(ws);
+    console.log(`User ${ws.id} keluar dari ${ws.roomId}. Sisa: ${room.size}`);
 
-        if (rooms[ws.roomID].length === 0) {
-            delete rooms[ws.roomID];
-            console.log(`Room ${ws.roomID} dihapus karena kosong`);
+    // Beritahu sisa client bahwa partnernya kabur
+    for (const client of room) {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({ type: 'user-left', userId: ws.appUserId }));
         }
     }
-    ws.roomID = null;
+
+    // Hapus room dari memori jika kosong
+    if (room.size === 0) {
+        rooms.delete(ws.roomId);
+        console.log(`Room ${ws.roomId} dihapus karena kosong`);
+    }
+    ws.roomId = null;
 }
 
-console.log(`WebRTC Signaling Server berjalan di port ${PORT}...`);
-console.log('STUN servers:', iceServers.filter(s => !s.username).map(s => s.urls));
-console.log('TURN server (UDP+TCP) :', turnUrl);
+console.log(`WebRTC Signaling berjalan di port ${PORT}`);

@@ -202,7 +202,15 @@ export class WebRtcService {
 
             case 'user-joined':
                 console.log('[WebRtcService] User joined:', data.userId);
-                this.createPeerConnection(data.userId, true);
+                // Inisialisasi awal tanpa negosiasi (menunggu peer-ready)
+                this.createPeerConnection(data.userId, false);
+                break;
+
+            case 'peer-ready':
+                console.log(`[WebRtcService] Peer ready. Role: ${data.role}, PeerId: ${data.peerId}`);
+                if (data.role === 'offerer') {
+                    this.initiateOffer(data.peerId);
+                }
                 break;
 
             case 'offer':
@@ -233,6 +241,24 @@ export class WebRtcService {
             pc = this.createPeerConnection(participantId, false);
         }
         return pc;
+    }
+
+    private async initiateOffer(participantId: string) {
+        const timestamp = new Date().toISOString();
+        const pc = this.getPeerConnection(participantId);
+        try {
+            console.log(`[WebRtcService][${timestamp}] Server assigned as offerer. Creating offer for ${participantId}`);
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            
+            this.sendSignalingMessage({
+                type: 'offer',
+                offer: pc.localDescription,
+                targetId: participantId,
+            });
+        } catch (err) {
+            console.error(`[WebRtcService][${timestamp}] Error creating offer for ${participantId}:`, err);
+        }
     }
 
     private createPeerConnection(participantId: string, isInitiator: boolean): RTCPeerConnection {
@@ -364,27 +390,16 @@ export class WebRtcService {
             }
         };
 
-        // Perfect Negotiation logic on negotiationneeded
-        pc.onnegotiationneeded = async () => {
-            const timestamp = new Date().toISOString();
-            console.log(`[WebRtcService][${timestamp}] negotiationneeded for ${participantId} - Match/Session ID: ${this.currentRoomId}, State: ${pc.signalingState}`);
-            try {
-                this.makingOffer.set(participantId, true);
-                await pc.setLocalDescription();
-                const offer = pc.localDescription;
-                if (!offer) return;
-
-                console.log(`[WebRtcService][${timestamp}] setLocalDescription() success for ${participantId}`);
-                this.sendSignalingMessage({
-                    type: 'offer',
-                    offer: offer,
-                    targetId: participantId,
-                });
-            } catch (err) {
-                console.error(`[WebRtcService][${timestamp}] Error during negotiation for ${participantId}:`, err);
-            } finally {
-                this.makingOffer.set(participantId, false);
-            }
+        // Role-based negotiation - We wait for 'peer-ready' from signaling server
+        // pc.onnegotiationneeded = async () => { ... } is removed to avoid glare/collisions.
+        
+        // Alat diagnostik tingkat lanjut untuk ICE
+        (pc as any).onicecandidateerror = (event: any) => {
+            console.error('[ICE ERROR]', { 
+                url: event.url, 
+                errorCode: event.errorCode, 
+                errorText: event.errorText 
+            });
         };
 
         pc.onconnectionstatechange = () => {
@@ -435,15 +450,6 @@ export class WebRtcService {
         console.log(`[WebRtcService][${timestamp}] Handling offer from: ${sender} - Match/Session ID: ${this.currentRoomId}`);
         const pc = this.getPeerConnection(sender);
 
-        const polite = (this.localUserId || '') < sender;
-        const offerCollision = this.makingOffer.get(sender) || pc.signalingState !== 'stable';
-
-        this.ignoreOffer.set(sender, !polite && offerCollision);
-        if (this.ignoreOffer.get(sender)) {
-            console.log(`[WebRtcService][${timestamp}] Ignoring offer from ${sender} (collision, impolite)`);
-            return;
-        }
-
         try {
             console.log(`[WebRtcService][${timestamp}] setRemoteDescription(offer) starting for ${sender}`);
             await pc.setRemoteDescription(new RTCSessionDescription(offer));
@@ -452,14 +458,13 @@ export class WebRtcService {
             // Flush pending ICE candidates
             await this.flushPendingIceCandidates(sender, pc);
 
-            await pc.setLocalDescription();
-            const answer = pc.localDescription;
-            if (!answer) return;
-
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            
             console.log(`[WebRtcService][${timestamp}] setLocalDescription(answer) success for ${sender}`);
             this.sendSignalingMessage({
                 type: 'answer',
-                answer: answer,
+                answer: pc.localDescription,
                 targetId: sender,
             });
         } catch (err) {
@@ -494,9 +499,7 @@ export class WebRtcService {
                 try {
                     await pc.addIceCandidate(new RTCIceCandidate(c));
                 } catch (err) {
-                    if (!this.ignoreOffer.get(sender)) {
-                        console.error(`[WebRtcService][${timestamp}] Error adding buffered ice candidate for ${sender}:`, err);
-                    }
+                    console.error(`[WebRtcService][${timestamp}] Error adding buffered ice candidate for ${sender}:`, err);
                 }
             }
             this.pendingCandidates.delete(sender);
@@ -512,9 +515,7 @@ export class WebRtcService {
                     await pc.addIceCandidate(new RTCIceCandidate(candidate));
                     console.log(`[WebRtcService][${timestamp}] ICE candidate added for ${sender}`);
                 } catch (err) {
-                    if (!this.ignoreOffer.get(sender)) {
-                        console.error(`[WebRtcService][${timestamp}] Error adding ice candidate for ${sender}:`, err);
-                    }
+                    console.error(`[WebRtcService][${timestamp}] Error adding ice candidate for ${sender}:`, err);
                 }
             } else {
                 console.log(`[WebRtcService][${timestamp}] Buffering ICE candidate for ${sender} (remote description not set yet)`);
