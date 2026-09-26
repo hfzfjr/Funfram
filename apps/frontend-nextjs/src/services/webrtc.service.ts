@@ -321,6 +321,22 @@ export class WebRtcService {
             pc.addTransceiver('audio', { direction: 'sendrecv' });
         }
 
+        // IMPORTANT FIX: ontrack does NOT fire for transceivers created locally via addTransceiver.
+        // We must manually construct the MediaStream from the receivers and trigger the UI callback immediately.
+        const receiverTracks = pc.getReceivers().map(r => r.track);
+        if (receiverTracks.length > 0) {
+            console.log(`[WebRtcService] Manually binding ${receiverTracks.length} receiver tracks for ${participantId}`);
+            let stream = new MediaStream(receiverTracks);
+            this.remoteStreams.set(participantId, stream);
+            
+            // Allow UI to bind the video element to these tracks before they even receive data
+            setTimeout(() => {
+                if (this.onRemoteStreamCallback) {
+                    this.onRemoteStreamCallback(participantId, stream);
+                }
+            }, 50);
+        }
+
         pc.ontrack = (event) => {
             const timestamp = new Date().toISOString();
             console.log(`[WebRtcService][${timestamp}] ontrack fired for ${participantId} - Match/Session ID: ${this.currentRoomId}, Track kind: ${event.track.kind}`);
