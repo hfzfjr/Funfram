@@ -90,14 +90,6 @@ export default function Navigation({
     <>
       <div className="navigation-overlay">
         <div className="navigation-content">
-          {/* Left Side elements: Live badge */}
-          <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(34, 197, 94, 0.1)', padding: '6px 12px', borderRadius: '20px', gap: '8px', border: '1px solid rgba(34, 197, 94, 0.2)' }}>
-            <div style={{ width: '8px', height: '8px', background: '#22c55e', borderRadius: '50%', boxShadow: '0 0 8px #22c55e' }}></div>
-            <span style={{ color: '#22c55e', fontSize: '13px', fontWeight: '600' }}>Live</span>
-          </div>
-
-          <div className="separator"></div>
-
           {/* Start/Next Frame Button - Always available for owner in FRAME, SEARCHING, MATCHED */}
           {isOwner && (fsmState === 'FRAME' || fsmState === 'SEARCHING' || fsmState === 'MATCHED') && (
             <NextFrameButton
