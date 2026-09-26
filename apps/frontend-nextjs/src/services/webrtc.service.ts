@@ -146,10 +146,6 @@ export class WebRtcService {
         });
     }
 
-    public getRemoteStream(participantId: string): MediaStream | undefined {
-        return this.remoteStreams.get(participantId);
-    }
-
     public connectToSignalingServer(url: string): Promise<void> {
         return new Promise((resolve, reject) => {
             try {
@@ -329,40 +325,10 @@ export class WebRtcService {
             pc.addTransceiver('audio', { direction: 'sendrecv' });
         }
 
-        // Helper to bind a track when it actually receives media
-        const bindTrack = (track: MediaStreamTrack) => {
-            console.log(`[WebRtcService] Binding active/unmuted track for ${participantId}: ${track.kind}`);
-            let stream = this.remoteStreams.get(participantId);
-            if (!stream) {
-                stream = new MediaStream();
-            } else {
-                stream = new MediaStream(stream.getTracks());
-            }
-            if (!stream.getTracks().includes(track)) {
-                stream.addTrack(track);
-            }
-            this.remoteStreams.set(participantId, stream);
-            if (this.onRemoteStreamCallback) {
-                this.onRemoteStreamCallback(participantId, stream);
-            }
-        };
-
-        // IMPORTANT FIX: ontrack does NOT fire for transceivers created locally via addTransceiver.
-        // We must listen for the 'unmute' event on the receiver tracks to know when media is actually flowing.
-        const receiverTracks = pc.getReceivers().map(r => r.track);
-        receiverTracks.forEach(track => {
-            if (!track.muted) {
-                bindTrack(track);
-            }
-            track.onunmute = () => {
-                bindTrack(track);
-            };
-        });
-
         pc.ontrack = (event) => {
             const timestamp = new Date().toISOString();
             console.log(`[WebRtcService][${timestamp}] ontrack fired for ${participantId} - Match/Session ID: ${this.currentRoomId}, Track kind: ${event.track.kind}`);
-            bindTrack(event.track);
+            // Let forceBindReceivers handle track binding robustly after setRemoteDescription
         };
 
         pc.onicecandidate = (event) => {
@@ -398,33 +364,6 @@ export class WebRtcService {
 
             if (isNowConnected && !wasPreviouslyConnected) {
                 this.wasConnected.set(participantId, true);
-                
-                // FALLBACK: In case 'onunmute' or 'ontrack' failed to fire (browser quirks),
-                // forcefully sweep and bind all unmuted receivers now that we are connected.
-                const activeTracks = pc.getReceivers().map(r => r.track).filter(t => !t.muted);
-                if (activeTracks.length > 0) {
-                    console.log(`[WebRtcService] ICE Connected. Fallback sweep found ${activeTracks.length} active tracks for ${participantId}`);
-                    let stream = this.remoteStreams.get(participantId);
-                    let changed = false;
-                    if (!stream) {
-                        stream = new MediaStream();
-                        changed = true;
-                    } else {
-                        stream = new MediaStream(stream.getTracks());
-                    }
-                    activeTracks.forEach(track => {
-                        if (!stream!.getTracks().includes(track)) {
-                            stream!.addTrack(track);
-                            changed = true;
-                        }
-                    });
-                    if (changed) {
-                        this.remoteStreams.set(participantId, stream);
-                        if (this.onRemoteStreamCallback) {
-                            this.onRemoteStreamCallback(participantId, stream);
-                        }
-                    }
-                }
             } else if (!isNowConnected && wasPreviouslyConnected) {
                 // Was connected, now disconnected - mark as reconnecting
                 import('@/store/useCallStore').then(module => {
@@ -520,6 +459,9 @@ export class WebRtcService {
             await pc.setRemoteDescription(new RTCSessionDescription(offer));
             console.log(`[WebRtcService][${timestamp}] setRemoteDescription(offer) success for ${sender}`);
 
+            // Unconditionally bind receivers after parsing the remote description
+            this.forceBindReceivers(sender, pc);
+
             // Flush pending ICE candidates
             await this.flushPendingIceCandidates(sender, pc);
 
@@ -547,10 +489,43 @@ export class WebRtcService {
                 await pc.setRemoteDescription(new RTCSessionDescription(answer));
                 console.log(`[WebRtcService][${timestamp}] setRemoteDescription(answer) success for ${sender}`);
 
+                // Unconditionally bind receivers after parsing the remote description
+                this.forceBindReceivers(sender, pc);
+
                 // Flush pending ICE candidates
                 await this.flushPendingIceCandidates(sender, pc);
             } catch (err) {
                 console.error(`[WebRtcService][${timestamp}] Error handling answer from ${sender}:`, err);
+            }
+        }
+    }
+
+    private forceBindReceivers(participantId: string, pc: RTCPeerConnection) {
+        const tracks = pc.getReceivers().map(r => r.track);
+        if (tracks.length === 0) return;
+        
+        console.log(`[WebRtcService] Force binding ${tracks.length} receivers for ${participantId}`);
+        let stream = this.remoteStreams.get(participantId);
+        let changed = false;
+        
+        if (!stream) {
+            stream = new MediaStream();
+            changed = true;
+        } else {
+            stream = new MediaStream(stream.getTracks());
+        }
+        
+        tracks.forEach(track => {
+            if (!stream!.getTracks().includes(track)) {
+                stream!.addTrack(track);
+                changed = true;
+            }
+        });
+        
+        if (changed) {
+            this.remoteStreams.set(participantId, stream);
+            if (this.onRemoteStreamCallback) {
+                this.onRemoteStreamCallback(participantId, stream);
             }
         }
     }
