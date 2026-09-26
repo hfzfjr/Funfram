@@ -119,13 +119,6 @@ export class WebRtcService {
                         }
                     }
                 });
-
-                // Explicitly trigger renegotiation to ensure remote side receives the new tracks
-                // especially if the connection was established before the camera was granted.
-                if (pc.signalingState === 'stable' && (pc.connectionState === 'connected' || pc.iceConnectionState === 'connected')) {
-                    console.log('[WebRtcService] Forcing renegotiation after local stream update');
-                    this.forceRenegotiate(participantId);
-                }
             }
         });
     }
