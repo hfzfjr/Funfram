@@ -321,45 +321,40 @@ export class WebRtcService {
             pc.addTransceiver('audio', { direction: 'sendrecv' });
         }
 
-        // IMPORTANT FIX: ontrack does NOT fire for transceivers created locally via addTransceiver.
-        // We must manually construct the MediaStream from the receivers and trigger the UI callback immediately.
-        const receiverTracks = pc.getReceivers().map(r => r.track);
-        if (receiverTracks.length > 0) {
-            console.log(`[WebRtcService] Manually binding ${receiverTracks.length} receiver tracks for ${participantId}`);
-            let stream = new MediaStream(receiverTracks);
+        // Helper to bind a track when it actually receives media
+        const bindTrack = (track: MediaStreamTrack) => {
+            console.log(`[WebRtcService] Binding active/unmuted track for ${participantId}: ${track.kind}`);
+            let stream = this.remoteStreams.get(participantId);
+            if (!stream) {
+                stream = new MediaStream();
+            } else {
+                stream = new MediaStream(stream.getTracks());
+            }
+            if (!stream.getTracks().includes(track)) {
+                stream.addTrack(track);
+            }
             this.remoteStreams.set(participantId, stream);
-            
-            // Allow UI to bind the video element to these tracks before they even receive data
-            setTimeout(() => {
-                if (this.onRemoteStreamCallback) {
-                    this.onRemoteStreamCallback(participantId, stream);
-                }
-            }, 50);
-        }
+            if (this.onRemoteStreamCallback) {
+                this.onRemoteStreamCallback(participantId, stream);
+            }
+        };
+
+        // IMPORTANT FIX: ontrack does NOT fire for transceivers created locally via addTransceiver.
+        // We must listen for the 'unmute' event on the receiver tracks to know when media is actually flowing.
+        const receiverTracks = pc.getReceivers().map(r => r.track);
+        receiverTracks.forEach(track => {
+            if (!track.muted) {
+                bindTrack(track);
+            }
+            track.onunmute = () => {
+                bindTrack(track);
+            };
+        });
 
         pc.ontrack = (event) => {
             const timestamp = new Date().toISOString();
             console.log(`[WebRtcService][${timestamp}] ontrack fired for ${participantId} - Match/Session ID: ${this.currentRoomId}, Track kind: ${event.track.kind}`);
-
-            // Always create a new MediaStream reference so React detects the state change
-            let stream = this.remoteStreams.get(participantId);
-            if (!stream) {
-                stream = event.streams && event.streams.length > 0 ? event.streams[0] : new MediaStream();
-            } else {
-                // Force a new reference containing all previous tracks + the new one
-                stream = new MediaStream(stream.getTracks());
-            }
-            
-            if (!stream.getTracks().includes(event.track)) {
-                stream.addTrack(event.track);
-            }
-            
-            this.remoteStreams.set(participantId, stream);
-
-            console.log(`[WebRtcService][${timestamp}] Remote stream updated from: ${participantId}, Tracks: ${stream.getTracks().length}`);
-            if (this.onRemoteStreamCallback) {
-                this.onRemoteStreamCallback(participantId, stream);
-            }
+            bindTrack(event.track);
         };
 
         pc.onicecandidate = (event) => {
