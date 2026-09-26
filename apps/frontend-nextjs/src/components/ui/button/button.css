@@ -110,17 +110,20 @@
 }
 
 @media (max-width: 768px) {
-    .button {
+    .button,
+    .invite-button {
         padding: 0;
         width: 52px;
         height: 52px;
         border-radius: 50%;
         justify-content: center;
     }
-    .button span {
+    .button span,
+    .invite-button span {
         display: none;
     }
-    .button svg {
+    .button svg,
+    .invite-button svg {
         margin: 0;
     }
     .unread-badge {
