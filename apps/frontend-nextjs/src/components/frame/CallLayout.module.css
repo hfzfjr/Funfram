@@ -1,4 +1,4 @@
-﻿/*
+/*
   Two-column meeting layout.
   Strict 1:1 aspect ratio boxes.
 */
@@ -13,13 +13,13 @@
     box-sizing: border-box;
     align-items: center;
     justify-content: center;
+    container-type: size;
 }
 
 .side {
     aspect-ratio: 1 / 1;
-    width: auto;
-    height: 100%;
-    max-width: calc(50% - 12px);
+    width: min(calc(50cqw - 12px), 100cqh);
+    height: min(calc(50cqw - 12px), 100cqh);
     display: flex;
     flex-direction: column;
     border-radius: 24px;
