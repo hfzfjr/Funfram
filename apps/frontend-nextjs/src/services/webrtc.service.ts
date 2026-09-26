@@ -208,6 +208,9 @@ export class WebRtcService {
 
             case 'peer-ready':
                 console.log(`[WebRtcService] Peer ready. Role: ${data.role}, PeerId: ${data.peerId}`);
+                // Proactively create PC so it's ready for offer/answer
+                this.createPeerConnection(data.peerId, false);
+                
                 if (data.role === 'offerer') {
                     this.initiateOffer(data.peerId);
                 }
@@ -395,11 +398,11 @@ export class WebRtcService {
         
         // Alat diagnostik tingkat lanjut untuk ICE
         (pc as any).onicecandidateerror = (event: any) => {
-            console.error('[ICE ERROR]', { 
+            console.error('[ICE ERROR]', JSON.stringify({ 
                 url: event.url, 
                 errorCode: event.errorCode, 
                 errorText: event.errorText 
-            });
+            }));
         };
 
         pc.onconnectionstatechange = () => {
