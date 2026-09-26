@@ -77,7 +77,7 @@ function handleJoin(ws, roomID, userId) {
     }
 
     ws.roomId = roomID;
-    ws.appUserId = userId; // Optional: Simpan userId aplikasi untuk identifikasi
+    ws.appUserId = userId || ws.id; // Pastikan selalu ada identitas
     room.add(ws);
     console.log(`User ${ws.id} masuk ke ${roomID}. Total anggota: ${room.size}`);
 
@@ -117,6 +117,10 @@ function forwardToPartner(senderWs, data) {
     if (!senderWs.roomId || !rooms.has(senderWs.roomId)) return;
     
     const room = rooms.get(senderWs.roomId);
+    
+    // SANGAT PENTING: Sisipkan identitas pengirim agar penerima tahu ini dari siapa
+    data.sender = senderWs.appUserId;
+
     for (const client of room) {
         if (client !== senderWs && client.readyState === WebSocket.OPEN) {
             client.send(JSON.stringify(data));
