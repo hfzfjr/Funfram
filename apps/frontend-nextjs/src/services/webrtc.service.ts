@@ -140,6 +140,10 @@ export class WebRtcService {
 
     public onRemoteStream(callback: (participantId: string, stream: MediaStream) => void) {
         this.onRemoteStreamCallback = callback;
+        // IMPORTANT: If streams were established before the UI subscribed, fire immediately!
+        this.remoteStreams.forEach((stream, participantId) => {
+            callback(participantId, stream);
+        });
     }
 
     public connectToSignalingServer(url: string): Promise<void> {
@@ -390,6 +394,33 @@ export class WebRtcService {
 
             if (isNowConnected && !wasPreviouslyConnected) {
                 this.wasConnected.set(participantId, true);
+                
+                // FALLBACK: In case 'onunmute' or 'ontrack' failed to fire (browser quirks),
+                // forcefully sweep and bind all unmuted receivers now that we are connected.
+                const activeTracks = pc.getReceivers().map(r => r.track).filter(t => !t.muted);
+                if (activeTracks.length > 0) {
+                    console.log(`[WebRtcService] ICE Connected. Fallback sweep found ${activeTracks.length} active tracks for ${participantId}`);
+                    let stream = this.remoteStreams.get(participantId);
+                    let changed = false;
+                    if (!stream) {
+                        stream = new MediaStream();
+                        changed = true;
+                    } else {
+                        stream = new MediaStream(stream.getTracks());
+                    }
+                    activeTracks.forEach(track => {
+                        if (!stream!.getTracks().includes(track)) {
+                            stream!.addTrack(track);
+                            changed = true;
+                        }
+                    });
+                    if (changed) {
+                        this.remoteStreams.set(participantId, stream);
+                        if (this.onRemoteStreamCallback) {
+                            this.onRemoteStreamCallback(participantId, stream);
+                        }
+                    }
+                }
             } else if (!isNowConnected && wasPreviouslyConnected) {
                 // Was connected, now disconnected - mark as reconnecting
                 import('@/store/useCallStore').then(module => {
