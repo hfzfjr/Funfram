@@ -125,17 +125,12 @@ export default function Navigation({
 
           <ChatButton onClick={handleChatClick} hasUnread={hasUnreadChat} />
 
-          <div className="separator"></div>
-          
-          <InviteFriendsButton
-            onClick={() => {
-                if (fsmState === 'FRAME') {
-                    setShowInviteOverlay(true);
-                } else {
-                    useCallStore.getState().showCustomAlert('Kamu sedang mencari/berada di dalam match. Kembali ke lobby (tekan tombol Lobby) terlebih dahulu untuk mengundang teman.', 'error');
-                }
-            }}
-          />
+          {fsmState === 'FRAME' && (
+            <>
+              <div className="separator"></div>
+              <InviteFriendsButton onClick={() => setShowInviteOverlay(true)} />
+            </>
+          )}
         </div>
       </div>
 
