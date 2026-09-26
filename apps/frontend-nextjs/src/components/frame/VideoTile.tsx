@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState } from 'react';
 import { Participant } from '@/types/participant';
 import { useCallStore } from '@/store/useCallStore';
+import { WebRtcService } from '@/services/webrtc.service';
 import styles from './VideoTile.module.css';
 
 interface VideoTileProps {
@@ -12,6 +13,9 @@ export default function VideoTile({ participant }: VideoTileProps) {
     const localUserId = useCallStore((state) => state.localUser?.id);
     const isLocalVideo = participant.id === localUserId;
     const [isAutoplayBlocked, setIsAutoplayBlocked] = useState(false);
+    // Fallback stream: directly from WebRtcService if store hasn't updated yet
+    const [directStream, setDirectStream] = useState<MediaStream | null>(null);
+    const activeStream = participant.stream || directStream;
 
     useEffect(() => {
         if (videoRef.current) {
@@ -22,20 +26,40 @@ export default function VideoTile({ participant }: VideoTileProps) {
         }
     }, [participant.isMuted, isLocalVideo, isAutoplayBlocked]);
 
+    // Directly poll WebRtcService for remote stream in case the store update is delayed (race condition)
     useEffect(() => {
-        if (videoRef.current && participant.stream) {
+        if (isLocalVideo) return;
+        // Check immediately
+        const webrtc = WebRtcService.getInstance();
+        const existing = webrtc.getRemoteStream(participant.id);
+        if (existing) {
+            setDirectStream(existing);
+        }
+        // Keep polling every 500ms until we get a stream
+        const interval = setInterval(() => {
+            const stream = webrtc.getRemoteStream(participant.id);
+            if (stream) {
+                setDirectStream(stream);
+                clearInterval(interval);
+            }
+        }, 500);
+        return () => clearInterval(interval);
+    }, [participant.id, isLocalVideo]);
+
+    useEffect(() => {
+        if (videoRef.current && activeStream) {
             const videoEl = videoRef.current;
             // Force re-attach for iOS Safari audio bug when tracks are updated
-            if (videoEl.srcObject !== participant.stream) {
+            if (videoEl.srcObject !== activeStream) {
                 videoEl.srcObject = null;
-                videoEl.srcObject = participant.stream;
+                videoEl.srcObject = activeStream;
             }
             
             const attemptPlay = () => {
                 const playPromise = videoEl.play();
                 if (playPromise !== undefined) {
                     playPromise.then(() => {
-                        console.log(`[VideoTile] Autoplay succeeded for ${participant.id}. Tracks:`, participant.stream?.getTracks().length);
+                        console.log(`[VideoTile] Autoplay succeeded for ${participant.id}. Tracks:`, activeStream?.getTracks().length);
                         // If it played successfully but it's supposed to be unmuted, ensure it's not silently muted by the browser
                         if (!isLocalVideo && !participant.isMuted && !isAutoplayBlocked) {
                             videoEl.muted = false;
@@ -54,7 +78,7 @@ export default function VideoTile({ participant }: VideoTileProps) {
             
             attemptPlay();
         }
-    }, [participant.stream, isLocalVideo, participant.id]);
+    }, [activeStream, isLocalVideo, participant.id]);
 
     const handleUnmute = () => {
         if (videoRef.current) {
@@ -104,8 +128,8 @@ export default function VideoTile({ participant }: VideoTileProps) {
         isReconnecting ||
         isIceRestarting ||
         isFailed ||
-        (!participant.isCameraOff && !participant.stream) ||
-        (isConnecting && !participant.stream)
+        (!participant.isCameraOff && !activeStream) ||
+        (isConnecting && !activeStream)
     );
 
     let loadingText = 'Menghubungkan...';
@@ -119,7 +143,7 @@ export default function VideoTile({ participant }: VideoTileProps) {
 
     return (
         <div className={styles.container}>
-            {participant.stream ? (
+            {activeStream ? (
                 <video
                     ref={videoRef}
                     autoPlay

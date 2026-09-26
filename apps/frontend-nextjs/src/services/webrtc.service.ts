@@ -146,6 +146,10 @@ export class WebRtcService {
         });
     }
 
+    public getRemoteStream(participantId: string): MediaStream | undefined {
+        return this.remoteStreams.get(participantId);
+    }
+
     public connectToSignalingServer(url: string): Promise<void> {
         return new Promise((resolve, reject) => {
             try {
