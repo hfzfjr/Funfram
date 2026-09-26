@@ -744,7 +744,7 @@ function FunVideoContent() {
             {!isAuthenticated && <AuthOverlay onConfirm={handleAuthConfirm} />}
 
             <div className={styles.container}>
-                <Navbar />
+                
 
                 <div className={styles.content}>
                     {topAlert && (

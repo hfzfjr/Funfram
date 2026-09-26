@@ -10,7 +10,7 @@
     display: flex;
     flex-direction: row;
     gap: 24px;
-    padding: 16px 32px 32px 32px;
+    padding: 24px;
     background-color: transparent;
     box-sizing: border-box;
     align-items: center;
@@ -19,13 +19,13 @@
 }
 
 .side {
-    /* Maximize 1:1 boxes exactly to the container's available content space */
-    width: min(calc(50cqw - 12px), 100cqh);
-    height: min(calc(50cqw - 12px), 100cqh);
+    /* Maximize 1:1 boxes perfectly using pure viewport math to avoid container query bugs */
+    width: min(calc(50vw - 36px), calc(100dvh - 140px));
+    height: min(calc(50vw - 36px), calc(100dvh - 140px));
     aspect-ratio: 1 / 1;
     display: flex;
     flex-direction: column;
-    border-radius: 24px;
+    border-radius: 4px;
     background-color: #1e1e2f;
 }
 
