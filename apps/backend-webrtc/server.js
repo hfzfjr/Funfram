@@ -69,8 +69,14 @@ async function getIceServers() {
             const url = `https://${process.env.METERED_DOMAIN}/api/v1/turn/credentials?apiKey=${process.env.METERED_API_KEY}`;
             // Native fetch is available in Node.js 18+
             const res = await fetch(url);
-            const meteredServers = await res.json();
-            return meteredServers;
+            if (res.ok) {
+                const meteredServers = await res.json();
+                if (Array.isArray(meteredServers)) {
+                    return meteredServers;
+                }
+            } else {
+                console.error(`Metered API Error: ${res.status} ${res.statusText}`);
+            }
         } catch (err) {
             console.error('Gagal mengambil Metered TURN:', err);
         }
