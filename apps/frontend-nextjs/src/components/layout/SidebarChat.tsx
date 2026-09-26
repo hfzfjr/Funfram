@@ -38,9 +38,11 @@ export default function SidebarChat({ onClose }: SidebarChatProps) {
     };
 
     return (
-        <div className="sidebar-chat">
-            <div className="sidebar-header">
-                <h2 className="sidebar-title">General Chat</h2>
+        <>
+            <div className="sidebar-backdrop" onClick={onClose} />
+            <div className="sidebar-chat">
+                <div className="sidebar-header">
+                    <h2 className="sidebar-title">General Chat</h2>
                 <button onClick={onClose} className="close-button" aria-label="Close Chat">
                     ✕
                 </button>
@@ -97,5 +99,6 @@ export default function SidebarChat({ onClose }: SidebarChatProps) {
                 </button>
             </form>
         </div>
+        </>
     );
 }
