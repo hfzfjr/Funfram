@@ -230,30 +230,7 @@ export class WebRtcService {
 
         switch (data.type) {
             case 'ice-servers':
-                if (Array.isArray(data.iceServers) && data.iceServers.length > 0) {
-                    const validServers = data.iceServers.filter((s: any) => {
-                        const urlString = Array.isArray(s.urls) ? s.urls.join(',') : s.urls;
-                        return !urlString.includes('localhost');
-                    });
-                    this.iceServers = [...DEFAULT_ICE_SERVERS, ...validServers];
-                    this.iceServersReady = true;
-                    console.log('[WebRtcService] ICE servers configured:', this.iceServers.length, 'servers');
-                    // Perbarui konfigurasi pada peer connection yang sudah berjalan
-                    this.peerConnections.forEach((pc, id) => {
-                        try {
-                            pc.setConfiguration({ iceServers: this.iceServers });
-                            console.log(`[WebRtcService] Updated ICE servers on existing PC for: ${id}`);
-                        } catch (e) {
-                            console.warn('[WebRtcService] Error updating ice servers:', e);
-                        }
-                    });
-                }
-                // Proses user-joined yang tertunda jika ada
-                for (const userId of this.pendingUserJoins) {
-                    console.log('[WebRtcService] Processing deferred user-joined:', userId);
-                    this.createPeerConnection(userId, true);
-                }
-                this.pendingUserJoins = [];
+                // We ignore ice-servers from the backend because we use Cloudflare TURN securely
                 break;
 
             case 'user-joined':
@@ -706,3 +683,4 @@ export class WebRtcService {
         }
     }
 }
+

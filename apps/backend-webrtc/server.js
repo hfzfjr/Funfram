@@ -97,12 +97,6 @@ function handleJoin(ws, roomID, userId) {
     
     const room = rooms.get(roomID);
 
-    // Limit Maksimal 2 Orang per Room (PENTING untuk 1:1)
-    if (room.size >= 2) {
-        ws.send(JSON.stringify({ type: 'error', message: 'Room is full' }));
-        return;
-    }
-
     ws.roomId = roomID;
     ws.appUserId = userId || ws.id; // Pastikan selalu ada identitas
     room.add(ws);
@@ -118,22 +112,20 @@ function handleJoin(ws, roomID, userId) {
         // Beritahu client lain di dalam ruangan
         forwardToPartner(ws, {
             type: 'user-joined',
-            userId: ws.appUserId, // Memberitahu partner siapa yang bergabung
+            userId: ws.appUserId,
         });
 
-        // Jika room sudah berisi 2 orang, saatnya menunjuk Peran (Offerer & Answerer)
-        if (room.size === 2) {
-            const clients = Array.from(room);
-            const peerA = clients[0];
-            const peerB = clients[1];
-
-            // Wasit (Server) menunjuk siapa yang harus membuat Offer
-            peerA.send(JSON.stringify({ type: 'peer-ready', role: 'offerer', peerId: peerB.appUserId }));
-            peerB.send(JSON.stringify({ type: 'peer-ready', role: 'answerer', peerId: peerA.appUserId }));
+        // Beritahu user yang baru join tentang semua orang yang SUDAH ADA di dalam room
+        for (const existingClient of room) {
+            if (existingClient !== ws) {
+                // User yang baru join akan menjadi 'answerer' terhadap user yang sudah ada
+                ws.send(JSON.stringify({ type: 'peer-ready', role: 'answerer', peerId: existingClient.appUserId }));
+                // User yang sudah ada akan menjadi 'offerer' terhadap user yang baru join
+                existingClient.send(JSON.stringify({ type: 'peer-ready', role: 'offerer', peerId: ws.appUserId }));
+            }
         }
     });
 }
-
 function forwardToPartner(senderWs, data) {
     if (!senderWs.roomId || !rooms.has(senderWs.roomId)) return;
     
@@ -144,11 +136,18 @@ function forwardToPartner(senderWs, data) {
 
     for (const client of room) {
         if (client !== senderWs && client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify(data));
+            // Jika pesan spesifik untuk satu target, kirim ke target itu saja
+            if (data.targetId) {
+                if (client.appUserId === data.targetId) {
+                    client.send(JSON.stringify(data));
+                }
+            } else {
+                // Jika tidak ada target spesifik, broadcast ke semua (contoh: user-joined)
+                client.send(JSON.stringify(data));
+            }
         }
     }
 }
-
 function handleDisconnect(ws) {
     if (!ws.roomId || !rooms.has(ws.roomId)) return;
 
@@ -172,3 +171,6 @@ function handleDisconnect(ws) {
 }
 
 console.log(`WebRTC Signaling berjalan di port ${PORT}`);
+
+
+
