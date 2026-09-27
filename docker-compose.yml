@@ -13,6 +13,8 @@ services:
       - NEXT_PUBLIC_WS_GAME_URL=${NEXT_PUBLIC_WS_GAME_URL}
       - NEXT_PUBLIC_WS_WEBRTC_URL=${NEXT_PUBLIC_WS_WEBRTC_URL}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
+      - CLOUDFLARE_TURN_KEY_ID=${CLOUDFLARE_TURN_KEY_ID}
+      - CLOUDFLARE_TURN_API_TOKEN=${CLOUDFLARE_TURN_API_TOKEN}
     depends_on:
       - backend-websockets
       - backend-webrtc
@@ -74,3 +76,5 @@ services:
 networks:
   funfram-network:
     driver: bridge
+
+

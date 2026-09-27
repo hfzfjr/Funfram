@@ -431,6 +431,7 @@ export class WebRtcService {
                     });
                     try {
                         pc.restartIce();
+                        this.forceRenegotiate(participantId);
                     } catch (e) {
                         console.error('[WebRtcService] restartIce error:', e);
                     }
@@ -460,6 +461,7 @@ export class WebRtcService {
                     console.log(`[WebRtcService][${timestamp}] Triggering ICE restart (attempt ${restarts + 1}/3) for ${participantId} due to failed state.`);
                     try {
                         pc.restartIce();
+                        this.forceRenegotiate(participantId);
                     } catch (e) {
                         console.error('[WebRtcService] restartIce error:', e);
                     }
@@ -686,5 +688,6 @@ export class WebRtcService {
         }
     }
 }
+
 
 

@@ -1,17 +1,17 @@
 @import "tailwindcss";
 
 :root {
-  --bg-deep-navy: #080D1D;
-  --bg-surface: #11182D;
-  --bg-surface-sec: #18213B;
+  --bg-deep-navy: #F8FAFC;
+  --bg-surface: #FFFFFF;
+  --bg-surface-sec: #F1F5F9;
   
   --brand-gradient: linear-gradient(135deg, #00C6FF 0%, #3B82F6 45%, #A855F7 100%);
   --color-danger: #EF4444;
   --color-success: #22C55E;
   
-  --text-primary: #F8FAFC;
-  --text-secondary: #AAB4D0;
-  --text-muted: #6F7B98;
+  --text-primary: #0F172A;
+  --text-secondary: #475569;
+  --text-muted: #94A3B8;
 
   --font-plus-jakarta-sans: "Plus Jakarta Sans", "Segoe UI", system-ui, sans-serif;
 }
@@ -37,3 +37,4 @@ a:focus-visible {
   outline: 2px solid #3B82F6;
   outline-offset: 2px;
 }
+
