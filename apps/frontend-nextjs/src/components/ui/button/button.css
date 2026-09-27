@@ -49,16 +49,16 @@
 
 /* Device Toggle Buttons (Mic/Cam) */
 .toggle-button {
-    background: #334155;
-    color: #f8fafc;
+    background: #E2E8F0;
+    color: #0F172A;
 }
 
 .toggle-button.active-state {
-    background: #334155;
+    background: #E2E8F0;
 }
 
 .toggle-button.active-state:hover:not(:disabled) {
-    background: #475569;
+    background: #CBD5E1;
 }
 
 .toggle-button.inactive-state {
@@ -78,11 +78,11 @@
 .chat-button {
     position: relative;
     background: transparent;
-    color: #94a3b8;
+    color: #64748B;
 }
 
 .chat-button:hover:not(:disabled) {
-    color: #f8fafc;
+    color: #0F172A;
     background: rgba(255, 255, 255, 0.05);
 }
 
@@ -101,12 +101,12 @@
 }
 
 .return-lobby-button {
-    background: #334155;
+    background: #E2E8F0;
     color: white;
 }
 
 .return-lobby-button:hover:not(:disabled) {
-    background: #475569;
+    background: #CBD5E1;
 }
 
 @media (max-width: 768px) {
@@ -156,3 +156,4 @@
 .invite-button:active {
     transform: scale(0.96);
 }
+

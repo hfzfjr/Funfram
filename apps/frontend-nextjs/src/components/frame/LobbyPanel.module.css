@@ -9,7 +9,7 @@
 .videoContainer {
     flex: 1;
     position: relative;
-    background-color: #1a1a1a;
+    background-color: #F8FAFC;
     border-radius: 28px;
     overflow: hidden;
 }
@@ -34,7 +34,7 @@
     align-items: center;
     justify-content: center;
     gap: 12px;
-    background-color: #2a2a2a;
+    background-color: #F1F5F9;
 }
 
 .initials {
@@ -48,3 +48,4 @@
     font-size: 18px;
     font-weight: 500;
 }
+

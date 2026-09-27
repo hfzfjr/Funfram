@@ -1,9 +1,9 @@
 .container {
   display: flex;
   height: 100%;
-  background: linear-gradient(135deg, #1e1e2f, #2c2c3e);
-  color: #fff;
-  border-radius: 12px;
+  background: linear-gradient(135deg, #F1F5F9, #E2E8F0);
+  color: #0F172A;
+  border-radius: 8px;
   overflow: hidden;
 }
 .canvasWrapper {
@@ -14,7 +14,7 @@
 }
 .sidebar {
   flex: 1;
-  background: rgba(0,0,0,0.5);
+  background: rgba(0,0,0,0.03);
   padding: 1rem;
   display: flex;
   flex-direction: column;
@@ -30,24 +30,24 @@
   flex-direction: column;
   gap: 0.5rem;
   padding: 0.75rem;
-  border: 1px solid rgba(255,255,255,0.12);
+  border: 1px solid rgba(0,0,0,0.1);
   border-radius: 8px;
-  background: rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.6);
 }
 .status {
   font-size: 0.78rem;
   font-weight: 700;
-  color: #93c5fd;
+  color: #3B82F6;
   text-transform: uppercase;
 }
 .word {
-  color: #fff;
+  color: #0F172A;
   font-size: 1.25rem;
   line-height: 1.2;
   overflow-wrap: anywhere;
 }
 .answer {
-  color: #facc15;
+  color: #D97706;
   font-size: 0.95rem;
 }
 .stopButton {
@@ -56,7 +56,7 @@
   border-radius: 8px;
   padding: 0.75rem;
   background: #93000A;
-  color: #fff;
+  color: #0F172A;
   font-weight: 700;
   cursor: pointer;
 }
@@ -71,7 +71,7 @@
   padding: 0.8rem 1.4rem;
   border-radius: 8px;
   background: #16a34a;
-  color: #fff;
+  color: #0F172A;
   font-size: 1.4rem;
   font-weight: 800;
 
@@ -121,14 +121,16 @@
     position: sticky;
     top: 0;
     z-index: 10;
-    background: #1e1e2f;
+    background: #FFFFFF;
     border: 2px solid #08A7FD;
 
   }
 
   .word {
     font-size: 1.8rem;
-    color: #facc15;
+    color: #D97706;
     text-align: center;
   }
 }
+
+

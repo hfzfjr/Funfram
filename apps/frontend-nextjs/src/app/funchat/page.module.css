@@ -19,7 +19,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 16px;
-    background-color: #1a1a1a;
+    background-color: #FFFFFF;
     border: 1px solid #2a2a2a;
     border-radius: 12px;
 }
@@ -39,7 +39,7 @@
 .messagesContainer {
     flex: 1;
     overflow: hidden;
-    background-color: #1a1a1a;
+    background-color: #FFFFFF;
     border: 1px solid #2a2a2a;
     border-radius: 12px;
 }
@@ -82,7 +82,7 @@
 }
 
 .message.other .messageContent {
-    background-color: #2a2a2a;
+    background-color: #F8FAFC;
     color: white;
     border-bottom-left-radius: 4px;
 }
@@ -105,14 +105,14 @@
     display: flex;
     gap: 12px;
     padding: 16px;
-    background-color: #1a1a1a;
+    background-color: #FFFFFF;
     border: 1px solid #2a2a2a;
     border-radius: 12px;
 }
 
 .input {
     flex: 1;
-    background-color: #2a2a2a;
+    background-color: #F8FAFC;
     border: 1px solid #3a3a3a;
     border-radius: 8px;
     padding: 12px 16px;
@@ -151,3 +151,4 @@
     opacity: 0.5;
     cursor: not-allowed;
 }
+
