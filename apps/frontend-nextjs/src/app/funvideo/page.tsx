@@ -281,10 +281,13 @@ function FunVideoContent() {
             }, 5000);
         };
 
-        const connectWebRTC = (roomId: string) => {
+        const connectWebRTC = async (roomId: string) => {
             const webrtc = WebRtcService.getInstance();
             const webrtcUrl = process.env.NEXT_PUBLIC_WS_WEBRTC_URL || 'ws://localhost:5002';
             const store = useCallStore.getState();
+
+            // Fetch Cloudflare TURN credentials before connecting
+            await webrtc.fetchCloudflareIceServers();
 
             // Putuskan koneksi lama terlebih dahulu agar tidak ada koneksi duplikat
             // (contoh: koneksi lobi masih aktif saat MATCH_FOUND tiba)

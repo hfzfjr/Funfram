@@ -30,6 +30,42 @@ export class WebRtcService {
 
     private constructor() { }
 
+    public async fetchCloudflareIceServers(): Promise<void> {
+        try {
+            const res = await fetch('/api/turn-credentials');
+            if (!res.ok) {
+                console.warn('[WebRtcService] Failed to fetch TURN credentials, falling back to default STUN', await res.text());
+                return;
+            }
+            const data = await res.json();
+            if (data.iceServers) {
+                // Filter out port 53 (as recommended for Cloudflare TURN)
+                const filteredServers = data.iceServers.map((server: any) => {
+                    if (server.urls) {
+                        const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+                        server.urls = urls.filter((url: string) => !url.includes(':53?'));
+                    }
+                    return server;
+                });
+                this.iceServers = [...DEFAULT_ICE_SERVERS, ...filteredServers];
+                this.iceServersReady = true;
+                console.log('[WebRtcService] Fetched Cloudflare ICE Servers:', this.iceServers);
+                
+                // Update existing connections if any
+                this.peerConnections.forEach((pc, id) => {
+                    try {
+                        pc.setConfiguration({ iceServers: this.iceServers });
+                        console.log(`[WebRtcService] Updated ICE servers on existing PC for: ${id}`);
+                    } catch (e) {
+                        console.warn('[WebRtcService] Error updating ice servers:', e);
+                    }
+                });
+            }
+        } catch (e) {
+            console.error('[WebRtcService] Error fetching Cloudflare ICE servers:', e);
+        }
+    }
+
     private classifyNetworkQuality(packetLoss: number, rtt: number): 'good' | 'medium' | 'poor' {
         if (packetLoss < 2 && rtt < 150) return 'good';
         if (packetLoss < 5 && rtt < 300) return 'medium';
