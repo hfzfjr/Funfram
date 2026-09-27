@@ -7,10 +7,10 @@ const ParticipantAudio = ({ participant }: { participant: any }) => {
     const audioRef = useRef<HTMLAudioElement>(null);
 
     useEffect(() => {
-        if (audioRef.current && participant.mediaStream) {
-            audioRef.current.srcObject = participant.mediaStream;
+        if (audioRef.current && participant.stream) {
+            audioRef.current.srcObject = participant.stream;
         }
-    }, [participant.mediaStream]);
+    }, [participant.stream]);
 
     return <audio ref={audioRef} autoPlay playsInline style={{ display: 'none' }} />;
 };
@@ -22,7 +22,7 @@ export default function HiddenAudioTracks() {
 
     // We only want to play audio for REMOTE participants
     const allParticipants = [...leftParticipants, ...rightParticipants];
-    const remoteParticipants = allParticipants.filter(p => p.id !== localUser?.id && p.mediaStream);
+    const remoteParticipants = allParticipants.filter(p => p.id !== localUser?.id && p.stream);
 
     return (
         <div style={{ display: 'none' }}>
