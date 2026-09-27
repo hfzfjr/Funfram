@@ -38,9 +38,12 @@ export class WebRtcService {
                 return;
             }
             const data = await res.json();
-            if (data.iceServers) {
+                        if (data.iceServers) {
+                // Handle both Array (Metered/Twilio) and Object (Cloudflare) responses
+                const serversArray = Array.isArray(data.iceServers) ? data.iceServers : [data.iceServers];
+                
                 // Filter out port 53 (as recommended for Cloudflare TURN)
-                const filteredServers = data.iceServers.map((server: any) => {
+                const filteredServers = serversArray.map((server: any) => {
                     if (server.urls) {
                         const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
                         server.urls = urls.filter((url: string) => !url.includes(':53?'));
@@ -683,4 +686,5 @@ export class WebRtcService {
         }
     }
 }
+
 
