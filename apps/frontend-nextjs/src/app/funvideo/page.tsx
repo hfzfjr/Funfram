@@ -7,6 +7,7 @@ import Navigation from '@/components/layout/Navigation';
 import AuthOverlay from '@/components/auth/auth';
 import MeetingScene from '@/components/frame/MeetingScene';
 import GameScene from '@/components/frame/GameScene';
+import HiddenAudioTracks from '@/components/frame/HiddenAudioTracks';
 import GameInviteNotification from '@/components/ui/overlay/GameInviteNotification';
 import { useCallStore } from '@/store/useCallStore';
 import { WebSocketService } from '@/services/websocket.service';
@@ -766,7 +767,10 @@ function FunVideoContent() {
                         </div>
                     )}
                     {fsmState === 'PLAYING' || fsmState === 'RESULT' ? (
-                        <GameScene />
+                        <>
+                            <GameScene />
+                            <HiddenAudioTracks />
+                        </>
                     ) : (
                         <MeetingScene />
                     )}

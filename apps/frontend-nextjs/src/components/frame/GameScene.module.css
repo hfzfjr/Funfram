@@ -1,9 +1,10 @@
-/* GameScene.module.css */
 .container {
   display: flex;
-  height: 100vh;
+  height: 100%;
   background: linear-gradient(135deg, #1e1e2f, #2c2c3e);
   color: #fff;
+  border-radius: 12px;
+  overflow: hidden;
 }
 .canvasWrapper {
   position: relative;
@@ -100,19 +101,19 @@
   .container {
     flex-direction: column;
     height: 100%;
-    /* Let page.module.css handle padding-bottom if needed */
+    width: 100%;
   }
   
   .canvasWrapper {
     flex: 1;
-    min-height: 40vh;
+    min-height: 0;
   }
   
   .sidebar {
-    flex: none;
-    order: 2; /* Ensure sidebar is at the bottom */
+    flex: 1;
+    min-height: 0;
+    order: 2;
     overflow-y: auto;
-    max-height: 45vh; /* slightly larger */
     padding-top: 0;
   }
 
