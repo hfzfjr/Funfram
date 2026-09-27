@@ -125,7 +125,7 @@ export default function Navigation({
 
           <ChatButton onClick={handleChatClick} hasUnread={hasUnreadChat} />
 
-          {fsmState === 'FRAME' && (
+          {isOwner && fsmState === 'FRAME' && (
             <>
               <div className="separator"></div>
               <InviteFriendsButton onClick={() => setShowInviteOverlay(true)} />
