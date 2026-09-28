@@ -10,7 +10,7 @@ export default function PlaceholderTile({ showLogo = true, text = null }: Placeh
     const isSearching = !showLogo && text?.includes('Searching');
 
     return (
-        <div className={styles.container}>
+        <div className={styles.container}>`r`n            {isSearching && <div className={styles.tvNoise}></div>}
             {showLogo ? (
                 <img
                     src="/logo-utama.png"
@@ -38,3 +38,4 @@ export default function PlaceholderTile({ showLogo = true, text = null }: Placeh
         </div>
     );
 }
+

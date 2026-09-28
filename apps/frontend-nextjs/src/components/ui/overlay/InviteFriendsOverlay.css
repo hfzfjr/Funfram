@@ -31,7 +31,7 @@
 .overlay-title {
   font-size: 20px;
   font-weight: 600;
-  color: white;
+  color: #0F172A;
   margin: 0;
 }
 
@@ -47,7 +47,7 @@
 }
 
 .close-button:hover {
-  color: white;
+  color: #0F172A;
 }
 
 .overlay-body {
@@ -73,7 +73,7 @@
   border: 1px solid #e4e4e7;
   border-radius: 8px;
   padding: 10px 12px;
-  color: white;
+  color: #0F172A;
   font-size: 14px;
   outline: none;
 }
@@ -82,9 +82,7 @@
   border-color: #3b82f6;
 }
 
-.copy-button {
-  background-color: #3b82f6;
-  color: white;
+.copy-button {`r`n  background-color: #3b82f6;`r`n  color: #FFFFFF;
   border: none;
   padding: 10px 16px;
   border-radius: 8px;
@@ -106,7 +104,7 @@
 
 .social-button {
   background-color: #f4f4f5;
-  color: white;
+  color: #0F172A;
   border: 1px solid #e4e4e7;
   padding: 12px;
   border-radius: 8px;
@@ -120,4 +118,6 @@
   background-color: #e4e4e7;
   border-color: #d4d4d8;
 }
+
+
 
