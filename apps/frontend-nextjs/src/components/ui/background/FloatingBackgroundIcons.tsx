@@ -16,8 +16,8 @@ const SVGS = [
 ];
 
 export default function FloatingBackgroundIcons() {
-    // Generate 30 random icons once
-    const icons = Array.from({ length: 30 }).map((_, i) => {
+    // Generate 150 random icons once
+    const icons = Array.from({ length: 150 }).map((_, i) => {
         const svgIndex = i % SVGS.length;
         const size = 30 + Math.random() * 40; // 30px to 70px
         const left = Math.random() * 100; // 0% to 100%
@@ -49,3 +49,5 @@ export default function FloatingBackgroundIcons() {
         </div>
     );
 }
+
+
