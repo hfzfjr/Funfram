@@ -65,9 +65,7 @@
   transform: scale(0.95);
 }
 
-.auth-button.enabled {
-  background-color: #0ea5e9;
-  color: #0F172A;
+.auth-button.enabled {`r`n  background-color: #0ea5e9;`r`n  color: white;
 }
 
 .auth-button.enabled:hover {
@@ -79,5 +77,6 @@
   color: #52525b;
   cursor: not-allowed;
 }
+
 
 
