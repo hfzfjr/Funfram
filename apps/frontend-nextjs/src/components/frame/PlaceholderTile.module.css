@@ -23,7 +23,8 @@
     pointer-events: none;
 }
 
-.textContainer {`r`n    z-index: 1;
+.textContainer {
+    z-index: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -44,7 +45,8 @@
     font-weight: 500;
 }
 
-.searchingAnimationBox {`r`n    z-index: 1;
+.searchingAnimationBox {
+    z-index: 1;
     position: relative;
     display: flex;
     align-items: center;
@@ -109,5 +111,6 @@
     80% { transform: translate(5%,-5%) }
     100% { transform: translate(0,0) }
 }
+
 
 
