@@ -50,8 +50,8 @@ export default function GameInviteModal({ onClose }: GameInviteModalProps) {
                                     gap: '16px',
                                     padding: '16px',
                                     borderRadius: '12px',
-                                    border: '1px solid #2a2a2a',
-                                    background: game.available ? '#2a2d3d' : '#1e1f29',
+                                    border: '1px solid #E2E8F0',
+                                    background: game.available ? '#E0F2FE' : '#F1F5F9',
                                     textAlign: 'left',
                                     cursor: game.available ? 'pointer' : 'not-allowed',
                                     opacity: game.available ? 1 : 0.6,
@@ -63,18 +63,18 @@ export default function GameInviteModal({ onClose }: GameInviteModalProps) {
                                 <span style={{ fontSize: '32px' }}>{game.icon}</span>
                                 <div style={{ flex: 1 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <span style={{ fontWeight: '600', color: 'white', fontSize: '15px' }}>{game.name}</span>
+                                        <span style={{ fontWeight: '600', color: '#0F172A', fontSize: '15px' }}>{game.name}</span>
                                         {!game.available && (
                                             <span style={{
                                                 fontSize: '10px',
-                                                background: '#4b5563',
-                                                color: '#d1d5db',
+                                                background: '#CBD5E1',
+                                                color: '#334155',
                                                 padding: '2px 6px',
                                                 borderRadius: '4px'
                                             }}>SOON</span>
                                         )}
                                     </div>
-                                    <p style={{ fontSize: '12px', color: '#a1a1aa', margin: '4px 0 0 0' }}>{game.desc}</p>
+                                    <p style={{ fontSize: '12px', color: '#64748B', margin: '4px 0 0 0' }}>{game.desc}</p>
                                 </div>
                             </button>
                         ))}
@@ -84,3 +84,4 @@ export default function GameInviteModal({ onClose }: GameInviteModalProps) {
         </div>
     );
 }
+

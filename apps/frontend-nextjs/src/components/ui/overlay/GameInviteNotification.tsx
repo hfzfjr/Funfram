@@ -26,15 +26,15 @@ export default function GameInviteNotification() {
             position: 'fixed',
             bottom: '100px',
             right: '24px',
-            background: '#1f2937',
-            border: '2px solid #8b5cf6',
-            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)',
+            background: '#FFFFFF',
+            border: '1px solid #E2E8F0',
+            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
             borderRadius: '16px',
             padding: '20px',
             zIndex: 9999,
             width: '320px',
             animation: 'slideUp 0.3s ease-out',
-            color: 'white',
+            color: '#0F172A',
         }}>
             <style jsx>{`
                 @keyframes slideUp {
@@ -47,13 +47,13 @@ export default function GameInviteNotification() {
                 <span style={{ fontSize: '28px' }}>🎮</span>
                 <div>
                     <h4 style={{ margin: 0, fontWeight: '600', fontSize: '15px' }}>Incoming Game Invite</h4>
-                    <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#9ca3af' }}>
+                    <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#64748B' }}>
                         From owner <strong style={{ color: '#ec4899' }}>{gameInvite.senderName}</strong>
                     </p>
                 </div>
             </div>
             
-            <p style={{ fontSize: '13px', color: '#d1d5db', margin: '0 0 16px 0' }}>
+            <p style={{ fontSize: '13px', color: '#475569', margin: '0 0 16px 0' }}>
                 They have invited you to play a round of <strong>Guess Drawing</strong>.
             </p>
             
@@ -81,9 +81,9 @@ export default function GameInviteNotification() {
                     onClick={handleDecline}
                     style={{
                         flex: 1,
-                        background: '#374151',
-                        color: '#d1d5db',
-                        border: '1px solid #4b5563',
+                        background: '#F1F5F9',
+                        color: '#334155',
+                        border: '1px solid #E2E8F0',
                         padding: '10px 16px',
                         borderRadius: '8px',
                         fontWeight: '600',
@@ -100,3 +100,5 @@ export default function GameInviteNotification() {
         </div>
     );
 }
+
+
