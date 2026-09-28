@@ -50,7 +50,7 @@
 /* Device Toggle Buttons (Mic/Cam) */
 .toggle-button {
     background: #E2E8F0;
-    color: #475569;
+    color: #1E293B;
 }
 
 .toggle-button.active-state {
@@ -78,7 +78,7 @@
 .chat-button {
     position: relative;
     background: transparent;
-    color: #64748B;
+    color: #334155;
 }
 
 .chat-button:hover:not(:disabled) {
@@ -156,6 +156,8 @@
 .invite-button:active {
     transform: scale(0.96);
 }
+
+
 
 
 

@@ -32,7 +32,7 @@
 .initials {
     font-size: 24px;
     font-weight: 600;
-    color: #475569;
+    color: #1E293B;
 }
 
 /* User Badge Pill (Top-Left) */
@@ -85,7 +85,7 @@
     background-color: rgba(255, 255, 255, 0.85);
     border: 1px solid rgba(0, 0, 0, 0.1);
     border-radius: 50%;
-    color: #475569;
+    color: #1E293B;
     backdrop-filter: blur(8px);
 }
 
@@ -168,6 +168,7 @@
 .localContainer .placeholder {
     border-radius: 2px;
 }
+
 
 
 
