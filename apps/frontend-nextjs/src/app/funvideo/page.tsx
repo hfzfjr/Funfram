@@ -51,7 +51,7 @@ function FunVideoContent() {
             {
                 video: {
                     width: { ideal: 1280 },
-                    height: { ideal: 720 },
+                    height: { ideal: 1280 },
                     facingMode: { ideal: 'user' },
                 },
                 audio: {
@@ -805,6 +805,7 @@ export default function FunVideoPage() {
         </Suspense>
     );
 }
+
 
 
 
