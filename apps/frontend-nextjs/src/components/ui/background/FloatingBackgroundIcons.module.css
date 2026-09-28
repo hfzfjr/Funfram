@@ -10,8 +10,8 @@
 
 .particle {
     position: absolute;
-    color: var(--brand-gradient, #3B82F6);
-    opacity: 0.05;
+    color: #1E293B;
+    opacity: 0.08;
     animation-name: drift;
     animation-timing-function: ease-in-out;
     animation-iteration-count: infinite;
@@ -31,3 +31,5 @@
         transform: translate(400px, -300px) rotate(360deg);
     }
 }
+
+
