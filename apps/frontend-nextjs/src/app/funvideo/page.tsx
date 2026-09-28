@@ -16,6 +16,7 @@ import { ApiService } from '@/services/api.service';
 import { Participant } from '@/types/participant';
 import { CanvasEvent } from '@/types/game';
 import styles from './page.module.css';
+import FloatingBackgroundIcons from '@/components/ui/background/FloatingBackgroundIcons';
 
 function FunVideoContent() {
     const searchParams = useSearchParams();
@@ -748,6 +749,7 @@ function FunVideoContent() {
             {!isAuthenticated && <AuthOverlay onConfirm={handleAuthConfirm} />}
 
             <div className={styles.container}>
+                <FloatingBackgroundIcons />
                 
 
                 <div className={styles.content}>
@@ -803,5 +805,7 @@ export default function FunVideoPage() {
         </Suspense>
     );
 }
+
+
 
 

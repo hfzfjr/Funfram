@@ -50,7 +50,7 @@
 /* Device Toggle Buttons (Mic/Cam) */
 .toggle-button {
     background: #E2E8F0;
-    color: #0F172A;
+    color: #475569;
 }
 
 .toggle-button.active-state {
@@ -156,4 +156,6 @@
 .invite-button:active {
     transform: scale(0.96);
 }
+
+
 
