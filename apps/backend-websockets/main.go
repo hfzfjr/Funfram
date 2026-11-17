@@ -31,6 +31,12 @@ func main() {
 	log.Printf("🚀 WebSocket Server starting on port %s\n", port)
 	log.Printf("📡 WebSocket endpoint: ws://localhost:%s/socket\n", port)
 
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok","service":"backend-websockets"}`))
+	})
+
 	http.HandleFunc("/socket", func(w http.ResponseWriter, r *http.Request) {
 
 		ws, err := upgrader.Upgrade(w, r, nil)

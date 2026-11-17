@@ -1,33 +1,30 @@
+const http = require('http');
 const WebSocket = require('ws');
 const crypto = require('crypto');
 const dotenv = require('dotenv');
 
 dotenv.config();
 const PORT = process.env.PORT || 5002;
-const wss = new WebSocket.Server({ port: PORT });
+
+const server = http.createServer((req, res) => {
+    if (req.url === '/health' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok', service: 'backend-webrtc' }));
+        return;
+    }
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('Not Found');
+});
+
+const wss = new WebSocket.Server({ server });
 
 // State Management yang benar (Gunakan Map, bukan Object sembarangan)
 const rooms = new Map(); // roomID -> Set of WebSocket clients
 
-// Rahasia TURN Server (Samakan dengan static-auth-secret di turnserver.conf)
-const TURN_SECRET = process.env.TURN_SECRET || 'rahasia_funfram_super_aman_123';
-const TURN_URLS = [
-    'turn:turn.roomify.space:3478?transport=udp',
-    'turn:turn.roomify.space:3478?transport=tcp',
-    'turns:turn.roomify.space:443?transport=tcp' // Wajib ada sertifikat SSL di Coturn
+const FALLBACK_ICE_SERVERS = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' }
 ];
-
-// Fungsi Generate Ephemeral TURN Credentials (TURN REST API)
-function getTurnCredentials() {
-    const unixTimeStamp = Math.floor(Date.now() / 1000) + (24 * 3600); // Expired dalam 24 Jam
-    const username = `${unixTimeStamp}:funfram_user`;
-    
-    const hmac = crypto.createHmac('sha1', TURN_SECRET);
-    hmac.update(username);
-    const credential = hmac.digest('base64');
-    
-    return { username, credential };
-}
 
 wss.on('connection', (ws) => {
     ws.id = crypto.randomUUID(); // Connection ID aman dari server
@@ -82,12 +79,8 @@ async function getIceServers() {
         }
     }
 
-    // Fallback lokal (yang tertahan oleh CGNAT)
-    const turnAuth = getTurnCredentials();
-    return [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: TURN_URLS, username: turnAuth.username, credential: turnAuth.credential }
-    ];
+    // Fallback STUN (primary TURN diambil frontend melalui /api/turn-credentials)
+    return FALLBACK_ICE_SERVERS;
 }
 
 function handleJoin(ws, roomID, userId) {
@@ -170,7 +163,9 @@ function handleDisconnect(ws) {
     ws.roomId = null;
 }
 
-console.log(`WebRTC Signaling berjalan di port ${PORT}`);
+server.listen(PORT, () => {
+    console.log(`WebRTC Signaling berjalan di port ${PORT}`);
+});
 
 
 
