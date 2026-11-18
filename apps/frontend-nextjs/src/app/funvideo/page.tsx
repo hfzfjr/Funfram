@@ -460,6 +460,12 @@ function FunVideoContent() {
             useCallStore.getState().receiveCanvasEvent(payload);
         };
 
+        const onGameAction = (payload: any) => {
+            if (payload?.game === 'guess_drawing' && payload?.action === 'SYNC_CANVAS' && Array.isArray(payload.events)) {
+                useCallStore.getState().updateGameState({ canvasEvents: payload.events });
+            }
+        };
+
         const onFrameDestroyed = () => {
             useCallStore.getState().showCustomAlert('Pemilik frame telah menutup frame ini. Anda akan dikembalikan ke lobi.');
             handleLeave();
@@ -499,6 +505,7 @@ function FunVideoContent() {
         ws.on('CANVAS_START', onCanvasEvent);
         ws.on('CANVAS_MOVE', onCanvasEvent);
         ws.on('CANVAS_END', onCanvasEvent);
+        ws.on('GAME_ACTION', onGameAction);
         const onLobbyReturned = () => {
             // Kembali ke lobby: teman tetap di frame, hanya match/search yang dibatalkan
             useCallStore.setState((state) => ({
@@ -546,6 +553,7 @@ function FunVideoContent() {
             ws.off('CANVAS_START', onCanvasEvent);
             ws.off('CANVAS_MOVE', onCanvasEvent);
             ws.off('CANVAS_END', onCanvasEvent);
+            ws.off('GAME_ACTION', onGameAction);
             ws.off('FRAME_DESTROYED', onFrameDestroyed);
             ws.off('LOBBY_RETURNED', onLobbyReturned);
             ws.off('ERROR', onError);

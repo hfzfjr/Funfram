@@ -84,10 +84,34 @@ export default function Navigation({
   const showGameButton = fsmState === 'MATCHED';
   const gameButtonDisabled = !isOwner;
 
+  const hasNext = isOwner && (fsmState === 'FRAME' || fsmState === 'SEARCHING' || fsmState === 'MATCHED');
+  const hasReturnToLobby = isOwner && isTeam && (fsmState === 'SEARCHING' || fsmState === 'MATCHED');
+  const hasGame = isOwner && showGameButton;
+  const hasInvite = isOwner && fsmState === 'FRAME';
+  const buttonCount =
+    3 + // Leave + Microphone + Chat
+    (hasNext ? 1 : 0) +
+    (hasReturnToLobby ? 1 : 0) +
+    (hasGame ? 1 : 0) +
+    (hasInvite ? 1 : 0);
+  const isFiveButtons = buttonCount >= 5;
+
   return (
     <>
-      <div className="fixed bottom-3 lg:bottom-6 left-1/2 -translate-x-1/2 z-[1000] w-[calc(100vw-32px)] max-w-[360px] lg:w-auto lg:max-w-none bg-white shadow-[0_4px_20px_rgba(0,0,0,0.08)] rounded-full px-3 py-2 lg:px-6 lg:py-3 border border-black/10 flex items-center box-border">
-        <div className="flex items-center justify-between lg:justify-start w-full lg:w-auto gap-1 sm:gap-2 lg:gap-3">
+      <div
+        className={`fixed bottom-3 lg:bottom-6 left-1/2 -translate-x-1/2 z-[1000] bg-white shadow-[0_4px_20px_rgba(0,0,0,0.08)] rounded-full py-2 lg:px-6 lg:py-3 border border-black/10 flex items-center box-border ${
+          isFiveButtons
+            ? 'w-[calc(100vw-32px)] max-w-[360px] px-3 lg:w-auto lg:max-w-none'
+            : 'w-fit max-w-[calc(100vw-32px)] px-3 lg:w-auto lg:max-w-none'
+        }`}
+      >
+        <div
+          className={`flex items-center lg:justify-start lg:w-auto lg:gap-3 ${
+            isFiveButtons
+              ? 'justify-between w-full gap-1 sm:gap-2'
+              : 'justify-center gap-2.5'
+          }`}
+        >
           {/* Start/Next Frame Button - Always available for owner in FRAME, SEARCHING, MATCHED */}
           {isOwner && (fsmState === 'FRAME' || fsmState === 'SEARCHING' || fsmState === 'MATCHED') && (
             <NextFrameButton
