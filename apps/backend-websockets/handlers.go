@@ -645,6 +645,10 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 			hub.mu.RUnlock()
 
 			if activeMatch != nil {
+				hub.mu.Lock()
+				activeMatch.PendingGameType = payload.GameType
+				hub.mu.Unlock()
+
 				otherLobby := activeMatch.LobbyA
 				if otherLobby.ID == client.LobbyID {
 					otherLobby = activeMatch.LobbyB
@@ -678,12 +682,21 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 				continue
 			}
 
+			gameType := "guess_drawing"
+			hub.mu.RLock()
+			if match, exists := hub.matches[payload.SessionID]; exists && match.PendingGameType != "" {
+				gameType = match.PendingGameType
+			}
+			hub.mu.RUnlock()
+
 			hub.broadcastEventToMatch(payload.SessionID, "GAME_START", map[string]interface{}{
 				"sessionId": payload.SessionID,
-				"gameType":  "guess_drawing",
+				"gameType":  gameType,
 			})
 
-			StartGame(hub, payload.SessionID)
+			if gameType == "guess_drawing" {
+				StartGame(hub, payload.SessionID)
+			}
 
 		case "GAME_DECLINE":
 			var payload GameDeclinePayload
@@ -709,6 +722,28 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 				enginesMu.Unlock()
 			}
 			hub.broadcastEventToMatch(payload.SessionID, "GAME_END", map[string]interface{}{})
+
+		case "GAME_ACTION":
+			var actionPayload map[string]interface{}
+			if err := json.Unmarshal(msg.Payload, &actionPayload); err != nil {
+				sendError(ws, "Invalid game action payload")
+				continue
+			}
+			actionPayload["senderId"] = client.ID
+
+			hub.mu.RLock()
+			var activeMatchID string
+			for mID, match := range hub.matches {
+				if match.LobbyA.ID == client.LobbyID || match.LobbyB.ID == client.LobbyID {
+					activeMatchID = mID
+					break
+				}
+			}
+			hub.mu.RUnlock()
+
+			if activeMatchID != "" {
+				hub.broadcastEventToMatch(activeMatchID, "GAME_ACTION", actionPayload)
+			}
 
 		case "CANVAS_START", "CANVAS_MOVE", "CANVAS_END":
 			hub.mu.RLock()

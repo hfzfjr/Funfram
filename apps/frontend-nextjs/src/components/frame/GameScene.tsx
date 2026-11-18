@@ -1,12 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useCallStore } from '@/store/useCallStore';
 import { WebSocketService } from '@/services/websocket.service';
-import Canvas from '@/components/frame/Canvas'; // placeholder, to be implemented later
+import Canvas from '@/components/frame/Canvas';
 import GuessInput from '@/components/frame/GuessInput';
-import ScoreBoard from '@/components/frame/ScoreBoard'; // placeholder UI
+import ScoreBoard from '@/components/frame/ScoreBoard';
+import GameVideoDock from '@/components/frame/GameVideoDock';
+import ChessGame from '@/components/frame/games/ChessGame';
+import UnoGame from '@/components/frame/games/UnoGame';
+import LudoGame from '@/components/frame/games/LudoGame';
 import styles from './GameScene.module.css';
 
 export default function GameScene() {
+  const activeGameType = useCallStore(state => state.activeGameType);
   const gameState = useCallStore(state => state.gameState);
   const submitGuess = useCallStore(state => state.submitGuess);
   const localUserId = useCallStore(state => state.localUser?.id);
@@ -58,8 +63,24 @@ export default function GameScene() {
 
 
 
+  if (activeGameType === 'chess' || activeGameType === 'uno' || activeGameType === 'ludo') {
+    return (
+      <div className={styles.container}>
+        <GameVideoDock />
+        {activeGameType === 'chess' && <ChessGame />}
+        {activeGameType === 'uno' && <UnoGame />}
+        {activeGameType === 'ludo' && <LudoGame />}
+      </div>
+    );
+  }
+
   if (!gameState) {
-    return <div className={styles.loading}>Loading game...</div>;
+    return (
+      <div className={styles.container}>
+        <GameVideoDock />
+        <div className={styles.loading} style={{ flex: 1 }}>Loading game...</div>
+      </div>
+    );
   }
 
   const isDrawer = gameState.currentDrawerId === localUserId;
@@ -77,6 +98,7 @@ export default function GameScene() {
 
   return (
     <div className={styles.container}>
+      <GameVideoDock />
       <div className={styles.canvasWrapper}>
         <Canvas events={gameState.canvasEvents} isDrawer={isDrawer} isActive={isDrawing} />
         {showCorrect && <div className={styles.correctToast}>Correct!</div>}

@@ -120,6 +120,8 @@ export interface CallStore {
     // Reconnection / Session recovery
     resumeSession: (savedState: any) => void;
     setLocalStream: (stream: MediaStream | null) => void;
+    activeGameType: string;
+    setActiveGameType: (gameType: string) => void;
 
     reset: () => void;
 }
@@ -163,6 +165,8 @@ export const useCallStore = create<CallStore>((set, get) => ({
     leftParticipants: [],
     rightParticipants: [],
     generalChat: [],
+    activeGameType: 'guess_drawing',
+    setActiveGameType: (activeGameType) => set({ activeGameType }),
 
     customAlert: null,
     gameInvite: null,

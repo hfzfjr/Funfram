@@ -408,8 +408,10 @@ function FunVideoContent() {
         };
 
         // ── GAME_START ────────────────────────────────────────────────────────
-        const onGameStart = () => {
+        const onGameStart = (payload?: any) => {
             const store = useCallStore.getState();
+            const gameType = payload?.gameType || 'guess_drawing';
+            store.setActiveGameType(gameType);
             store.setFsmState('PLAYING');
             store.updateGameState({ status: 'Waiting' });
         };
@@ -791,10 +793,7 @@ function FunVideoContent() {
                         </div>
                     )}
                     {fsmState === 'PLAYING' || fsmState === 'RESULT' ? (
-                        <>
-                            <GameScene />
-                            <HiddenAudioTracks />
-                        </>
+                        <GameScene />
                     ) : (
                         <MeetingScene />
                     )}

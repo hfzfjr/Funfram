@@ -64,11 +64,12 @@ type Session struct {
 }
 
 type Match struct {
-	ID        string
-	LobbyA    *Lobby
-	LobbyB    *Lobby
-	CreatedAt time.Time
-	EndedAt   *time.Time
+	ID              string
+	LobbyA          *Lobby
+	LobbyB          *Lobby
+	PendingGameType string
+	CreatedAt       time.Time
+	EndedAt         *time.Time
 }
 
 func (l *Lobby) ToFrame() Frame {

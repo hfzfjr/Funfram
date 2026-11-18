@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ApiService } from '@/services/api.service';
+import FloatingBackgroundIcons from '@/components/ui/background/FloatingBackgroundIcons';
 
 import '@/components/auth/auth.css';
 
@@ -90,34 +91,51 @@ export default function JoinFrameClient() {
 
     return (
         <div className="auth-overlay">
+            <FloatingBackgroundIcons />
             <div className="auth-modal">
-                <h1 className="auth-title">FunFram</h1>
-
-                <div className="auth-form">
-                    <div>
-                        <label className="auth-label">Username</label>
-                        <input
-                            type="text"
-                            value={username}
-                            onChange={(e) => setUsername(e.target.value)}
-                            placeholder="Masukkan username"
-                            className="auth-input"
-                            disabled={isChecking}
-                        />
-                        {error && (
-                            <div style={{ marginTop: '8px', color: '#fca5a5', fontSize: '0.9rem' }}>
-                                {error}
-                            </div>
-                        )}
+                <div className="auth-modal-left">
+                    <div className="auth-image-collage">
+                        <img src="/mockup1.png" alt="FunFram Preview 1" className="auth-img img1" />
+                        <img src="/mockup2.png" alt="FunFram Preview 2" className="auth-img img2" />
                     </div>
+                </div>
+                <div className="auth-modal-right">
+                    <h1 className="auth-title">
+                        Join <span style={{ color: '#0ea5e9' }}>FunFram</span>
+                    </h1>
+                    <p className="auth-subtitle">Enter your username to join your friend&apos;s frame!</p>
 
-                    <button
-                        onClick={handleJoin}
-                        disabled={!username.trim() || isChecking}
-                        className={`auth-button ${username.trim() && !isChecking ? 'enabled' : 'disabled'}`}
-                    >
-                        {isChecking ? 'Memeriksa...' : 'Konfirmasi'}
-                    </button>
+                    <div className="auth-form">
+                        <div>
+                            <label className="auth-label">Username</label>
+                            <input
+                                type="text"
+                                value={username}
+                                onChange={(e) => setUsername(e.target.value)}
+                                placeholder="Enter your username..."
+                                className="auth-input"
+                                disabled={isChecking}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && username.trim() && !isChecking) {
+                                        handleJoin();
+                                    }
+                                }}
+                            />
+                            {error && (
+                                <div style={{ marginTop: '8px', color: '#dc2626', fontSize: '0.88rem', fontWeight: 500 }}>
+                                    {error}
+                                </div>
+                            )}
+                        </div>
+
+                        <button
+                            onClick={handleJoin}
+                            disabled={!username.trim() || isChecking}
+                            className={`auth-button ${username.trim() && !isChecking ? 'enabled' : 'disabled'}`}
+                        >
+                            {isChecking ? 'Memeriksa...' : 'Join Frame'}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

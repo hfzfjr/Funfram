@@ -20,9 +20,9 @@ export default function GameInviteModal({ onClose }: GameInviteModalProps) {
 
     const games = [
         { id: 'guess_drawing', name: 'Guess Drawing', icon: '🎨', available: true, desc: 'Draw a secret word and compete to guess it first!' },
-        { id: 'uno', name: 'UNO Card Game', icon: '🃏', available: false, desc: 'Classic color and number matching card game.' },
-        { id: 'chess', name: 'Chess Arena', icon: '👑', available: false, desc: 'Engage in a 1v1 battle of deep logical tactics.' },
-        { id: 'ludo', name: 'Ludo Party', icon: '🎲', available: false, desc: 'Roll dice, move tokens, and reach the home base.' }
+        { id: 'uno', name: 'UNO Card Game', icon: '🃏', available: true, desc: 'Classic color and number matching card game.' },
+        { id: 'chess', name: 'Chess Arena', icon: '👑', available: true, desc: 'Engage in a 1v1 battle of deep logical tactics.' },
+        { id: 'ludo', name: 'Ludo Party', icon: '🎲', available: true, desc: 'Roll dice, move tokens, and reach the home base.' }
     ];
 
     return (
