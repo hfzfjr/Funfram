@@ -170,11 +170,7 @@ function FunFramContent() {
       {!isAuthenticated && <AuthOverlay onConfirm={handleAuthConfirm} />}
 
       <div
-        className="w-screen h-dvh bg-slate-200 flex flex-col overflow-hidden relative shadow-[inset_0_0_100px_rgba(14,165,233,0.1)]"
-        style={{
-          backgroundImage:
-            'radial-gradient(circle at 20% 80%, rgba(59, 130, 246, 0.15) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(14, 165, 233, 0.15) 0%, transparent 50%), radial-gradient(circle at 50% 50%, rgba(59, 130, 246, 0.05) 0%, transparent 70%)',
-        }}
+        className="w-screen h-dvh bg-transparent flex flex-col overflow-hidden relative shadow-[inset_0_0_100px_rgba(14,165,233,0.1)]"
       >
         <FloatingBackgroundIcons />
 
