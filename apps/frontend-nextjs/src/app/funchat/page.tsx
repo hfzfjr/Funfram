@@ -95,7 +95,7 @@ export default function FunChatPage() {
                         onChange={(e) => setInputText(e.target.value)}
                         onKeyPress={handleKeyPress}
                         placeholder="Ketik pesan..."
-                        className="flex-1 bg-slate-50 border border-neutral-700 focus:border-blue-500 rounded-lg px-4 py-3 text-slate-900 text-sm resize-none outline-none placeholder:text-zinc-400"
+                        className="flex-1 bg-slate-50 border border-neutral-700 focus:border-blue-500 rounded-lg px-4 py-3 text-slate-900 text-base md:text-sm resize-none outline-none placeholder:text-zinc-400"
                         rows={1}
                     />
                     <button

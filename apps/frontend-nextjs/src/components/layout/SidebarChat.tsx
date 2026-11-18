@@ -95,7 +95,7 @@ export default function SidebarChat({ onClose }: SidebarChatProps) {
                         value={text}
                         onChange={(e) => setText(e.target.value)}
                         placeholder="Type a message..."
-                        className="flex-1 bg-slate-100 border border-slate-200 focus:border-blue-500 focus:bg-white rounded-full px-5 py-3 text-slate-900 text-sm outline-none transition-all placeholder:text-slate-400"
+                        className="flex-1 bg-slate-100 border border-slate-200 focus:border-blue-500 focus:bg-white rounded-full px-5 py-3 text-slate-900 text-base md:text-sm outline-none transition-all placeholder:text-slate-400"
                         maxLength={200}
                     />
                     <button

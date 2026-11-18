@@ -63,7 +63,7 @@ export default function InviteFriendsOverlay({ onClose }: InviteFriendsOverlayPr
                             type="text"
                             value={inviteLink || 'Generating link...'}
                             readOnly
-                            className="flex-1 bg-zinc-100 border border-zinc-200 focus:border-blue-500 rounded-lg px-3 py-2.5 text-slate-900 text-sm outline-none"
+                            className="flex-1 bg-zinc-100 border border-zinc-200 focus:border-blue-500 rounded-lg px-3 py-2.5 text-slate-900 text-base md:text-sm outline-none"
                         />
                         <button
                             onClick={copyLink}

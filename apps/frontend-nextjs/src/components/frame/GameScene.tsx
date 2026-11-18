@@ -60,7 +60,7 @@ export default function GameScene() {
   }, []);
 
   const containerClass =
-    'flex flex-col md:flex-row h-full bg-gradient-to-br from-slate-100 to-slate-200 text-slate-900 rounded-lg overflow-hidden';
+    'flex flex-col md:flex-row h-full bg-transparent text-slate-900 rounded-lg overflow-hidden gap-3 px-4 pb-2';
 
   if (activeGameType === 'chess' || activeGameType === 'uno' || activeGameType === 'ludo') {
     return (
@@ -106,7 +106,7 @@ export default function GameScene() {
           </div>
         )}
       </div>
-      <div className="flex-1 bg-black/[0.03] p-4 flex flex-col gap-4 overflow-y-auto">
+      <div className="flex-1 bg-white/75 backdrop-blur-md border border-slate-200/80 rounded-xl shadow-sm p-4 flex flex-col gap-4 overflow-y-auto">
         <div className="flex flex-col gap-2 p-3 border border-black/10 rounded-lg bg-white/60">
           <span className="text-xs font-bold text-blue-500 uppercase">{gameState.status}</span>
           <strong className="text-slate-900 text-xl leading-tight break-words">{wordLabel}</strong>

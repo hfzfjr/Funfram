@@ -161,23 +161,27 @@ function FunVideoContent() {
         // ── FRAME_CREATED: server confirms lobby was created ──────────────────
         const onFrameCreated = (payload: any) => {
             const store = useCallStore.getState();
+            const currentStream = localStreamRef.current;
             const local: Participant = {
                 id: payload.ownerId,
-                stream: localStreamRef.current,
+                stream: currentStream,
                 name: store.localUser?.name ?? 'You',
-                isMuted: false,
-                isCameraOff: false,
+                isMuted: audioTrackRef.current ? !audioTrackRef.current.enabled : (store.localUser?.isMuted ?? false),
+                isCameraOff: videoTrackRef.current ? !videoTrackRef.current.enabled : (store.localUser?.isCameraOff ?? false),
                 isOwner: true,
                 presence: 'ONLINE',
                 joinOrder: 1,
             };
-            store.setLocalUser(local);
-            store.setFsmState('FRAME');
-            store.setFrameOwnerId(payload.ownerId);
-            // Persist frameId in store
-            useCallStore.setState({ frameId: payload.frameId, inviteToken: null });
-            // Always set left participant list with ourselves upon creation
-            useCallStore.setState({ leftParticipants: [local] });
+
+            useCallStore.setState({
+                localUser: local,
+                fsmState: 'FRAME',
+                frameOwnerId: payload.ownerId,
+                frameId: payload.frameId,
+                inviteToken: null,
+                leftParticipants: [local],
+            });
+
             // Save session for reconnect
             sessionStorage.setItem('funfram_session', JSON.stringify({
                 userId: payload.ownerId,
@@ -185,19 +189,6 @@ function FunVideoContent() {
                 frameId: payload.frameId,
                 isOwner: true,
             }));
-
-            // If stream is ready now, update participant
-            if (localStreamRef.current) {
-                store.setLocalUser({
-                    ...local,
-                    stream: localStreamRef.current,
-                });
-                useCallStore.setState((state) => ({
-                    leftParticipants: state.leftParticipants.map(p =>
-                        p.id === local.id ? { ...p, stream: localStreamRef.current } : p
-                    )
-                }));
-            }
 
             // Connect WebRTC for the Lobby using frameId
             connectWebRTC(payload.frameId);
@@ -684,8 +675,10 @@ function FunVideoContent() {
             frameOwnerId: newLocalUser?.id,
         });
 
-        // Clear query params so refresh doesn't rejoin the old frame
-        window.history.replaceState({}, '', '/funvideo');
+        // Clear query params only if present so Next.js router doesn't unnecessarily re-sync
+        if (window.location.search) {
+            window.history.replaceState({}, '', '/funvideo');
+        }
 
         // Request a new frame from the backend so we get a valid frameId
         if (newLocalUser) {
@@ -707,8 +700,10 @@ function FunVideoContent() {
                 sessionId: store.sessionId,
             });
         }
-        // Hapus query params
-        window.history.replaceState({}, '', '/funvideo');
+        // Hapus query params hanya jika ada
+        if (window.location.search) {
+            window.history.replaceState({}, '', '/funvideo');
+        }
     };
 
     const handleMic = () => {

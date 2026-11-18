@@ -33,9 +33,16 @@ export default function VideoTile({ participant }: VideoTileProps) {
             return;
         }
 
-        // Force re-attach for iOS Safari audio bug when tracks are updated
+        // Avoid resetting srcObject or re-playing if the exact same stream is already playing smoothly
+        if (videoEl.srcObject === participant.stream && !videoEl.paused) {
+            return;
+        }
+
+        // Force re-attach for iOS Safari audio bug when remote tracks are updated
         if (videoEl.srcObject !== participant.stream) {
-            videoEl.srcObject = null;
+            if (!isLocalVideo) {
+                videoEl.srcObject = null;
+            }
             videoEl.srcObject = participant.stream;
         }
 

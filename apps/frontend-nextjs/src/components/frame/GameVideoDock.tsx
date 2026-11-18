@@ -40,7 +40,7 @@ export default function GameVideoDock() {
           flexDirection: 'column',
           gap: '10px',
           padding: '10px',
-          background: 'rgba(15, 23, 42, 0.92)',
+          background: 'transparent',
           borderRadius: '12px',
           overflowY: 'auto',
           height: '100%',
@@ -50,7 +50,7 @@ export default function GameVideoDock() {
           style={{
             fontSize: '0.75rem',
             fontWeight: 700,
-            color: '#94A3B8',
+            color: '#475569',
             textTransform: 'uppercase',
             letterSpacing: '0.06em',
           }}
