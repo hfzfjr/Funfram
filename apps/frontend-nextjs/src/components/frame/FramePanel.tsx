@@ -1,7 +1,6 @@
 import { FrameSide } from '@/types/participant';
 import { useCallStore } from '@/store/useCallStore';
 import VideoGrid from './VideoGrid';
-import styles from './FramePanel.module.css';
 
 interface FramePanelProps {
     side: FrameSide;
@@ -13,8 +12,8 @@ export default function FramePanel({ side }: FramePanelProps) {
     );
 
     return (
-        <div className={styles.container}>
-            <div className={styles.content}>
+        <div className="w-full h-full flex flex-col rounded-lg overflow-hidden bg-slate-100 border border-slate-200 shadow-sm">
+            <div className="flex-1 flex items-stretch">
                 <VideoGrid participants={participants} side={side} />
             </div>
         </div>

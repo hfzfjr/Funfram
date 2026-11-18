@@ -1,7 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { useCallStore } from '@/store/useCallStore';
 import { CanvasEvent } from '@/types/game';
-import styles from './Canvas.module.css';
 
 export interface CanvasProps {
   events: CanvasEvent[];
@@ -97,19 +96,19 @@ export default function Canvas({ events, isDrawer, isActive }: CanvasProps) {
   };
 
   return (
-    <div className={styles.canvasShell}>
+    <div className="relative w-full h-full bg-white border border-white/20 rounded-lg overflow-hidden flex items-center justify-center">
       <canvas
         ref={canvasRef}
         width={CANVAS_WIDTH}
         height={CANVAS_HEIGHT}
-        className={styles.canvas}
+        className="block w-full h-full object-contain touch-none cursor-crosshair"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerEnd}
         onPointerCancel={handlePointerEnd}
       />
-      {!isDrawer && <div className={styles.badge}>Viewing</div>}
-      {isDrawer && !isActive && <div className={styles.badge}>Get ready</div>}
+      {!isDrawer && <div className="absolute top-3 right-3 px-2.5 py-1.5 rounded-md bg-gray-900/80 text-white text-xs font-semibold pointer-events-none">Viewing</div>}
+      {isDrawer && !isActive && <div className="absolute top-3 right-3 px-2.5 py-1.5 rounded-md bg-gray-900/80 text-white text-xs font-semibold pointer-events-none">Get ready</div>}
     </div>
   );
 }

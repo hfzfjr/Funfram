@@ -1,7 +1,5 @@
 'use client';
 
-import './button.css';
-
 interface GameButtonProps {
     onClick?: () => void;
     disabled?: boolean;
@@ -12,13 +10,11 @@ export default function GameButton({ onClick, disabled = false }: GameButtonProp
         <button
             onClick={onClick}
             disabled={disabled}
-            className={`button game-button ${disabled ? 'disabled-game-btn' : ''}`}
-            style={{
-                background: disabled ? '#1b1d28' : 'linear-gradient(to right, #ec4899, #8b5cf6)',
-                color: disabled ? '#4b5563' : 'white',
-                opacity: disabled ? 0.5 : 1,
-                cursor: disabled ? 'not-allowed' : 'pointer',
-            }}
+            className={`flex items-center justify-center gap-2 p-0 md:px-6 md:py-3 w-[52px] h-[52px] md:w-auto md:h-12 border-none rounded-full text-sm font-semibold transition-all duration-200 whitespace-nowrap active:enabled:scale-95 ${
+                disabled
+                    ? 'bg-[#1b1d28] text-gray-600 opacity-50 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-pink-500 to-violet-500 hover:from-pink-600 hover:to-violet-600 text-white cursor-pointer'
+            }`}
             aria-label="Launch Game Room"
         >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -28,7 +24,7 @@ export default function GameButton({ onClick, disabled = false }: GameButtonProp
                 <line x1="18" y1="11" x2="18.01" y2="11" />
                 <rect x="2" y="6" width="20" height="12" rx="3" />
             </svg>
-            <span>Play Game</span>
+            <span className="hidden md:inline">Play Game</span>
         </button>
     );
 }

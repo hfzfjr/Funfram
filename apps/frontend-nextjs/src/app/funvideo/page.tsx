@@ -15,7 +15,6 @@ import { WebRtcService } from '@/services/webrtc.service';
 import { ApiService } from '@/services/api.service';
 import { Participant } from '@/types/participant';
 import { CanvasEvent } from '@/types/game';
-import styles from './page.module.css';
 import FloatingBackgroundIcons from '@/components/ui/background/FloatingBackgroundIcons';
 
 function FunVideoContent() {
@@ -769,26 +768,18 @@ function FunVideoContent() {
         <>
             {!isAuthenticated && <AuthOverlay onConfirm={handleAuthConfirm} />}
 
-            <div className={styles.container}>
+            <div
+                className="w-screen h-dvh bg-slate-200 flex flex-col overflow-hidden relative shadow-[inset_0_0_100px_rgba(14,165,233,0.1)]"
+                style={{
+                    backgroundImage:
+                        'radial-gradient(circle at 20% 80%, rgba(59, 130, 246, 0.15) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(14, 165, 233, 0.15) 0%, transparent 50%), radial-gradient(circle at 50% 50%, rgba(59, 130, 246, 0.05) 0%, transparent 70%)',
+                }}
+            >
                 <FloatingBackgroundIcons />
-                
 
-                <div className={styles.content}>
+                <div className="flex-1 flex flex-col pb-[82px] md:pb-24 overflow-hidden relative">
                     {topAlert && (
-                        <div style={{
-                            position: 'absolute',
-                            top: '20px',
-                            left: '50%',
-                            transform: 'translateX(-50%)',
-                            background: '#18181b',
-                            border: '1px solid #27272a',
-                            color: '#0ea5e9',
-                            padding: '12px 24px',
-                            borderRadius: '16px',
-                            fontWeight: '600',
-                            zIndex: 1000,
-                            animation: 'fadeIn 0.2s forwards'
-                        }}>
+                        <div className="absolute top-5 left-1/2 -translate-x-1/2 bg-zinc-900 border border-zinc-800 text-sky-500 px-6 py-3 rounded-2xl font-semibold z-[1000] animate-[fadeIn_0.2s_forwards]">
                             {topAlert}
                         </div>
                     )}

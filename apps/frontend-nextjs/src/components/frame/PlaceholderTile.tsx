@@ -1,43 +1,46 @@
-import styles from './PlaceholderTile.module.css';
-
 interface PlaceholderTileProps {
     showLogo?: boolean;
     text?: string | null;
 }
 
 export default function PlaceholderTile({ showLogo = true, text = null }: PlaceholderTileProps) {
-    // Determine if it's the searching state based on text prop or showLogo
     const isSearching = !showLogo && text?.includes('Searching');
 
     return (
-        <div className={styles.container}>
-            {isSearching && <div className={styles.tvNoise}></div>}
+        <div className="w-full h-full flex flex-col items-center justify-center bg-white rounded-lg gap-8 overflow-hidden relative border border-black/8">
+            {isSearching && (
+                <div
+                    className="absolute -inset-1/2 w-[200%] h-[200%] opacity-15 z-0 pointer-events-none animate-[noiseAnimation_0.2s_steps(2)_infinite]"
+                    style={{
+                        backgroundImage:
+                            'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 200 200\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'noiseFilter\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.85\' numOctaves=\'3\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23noiseFilter)\'/%3E%3C/svg%3E")',
+                    }}
+                />
+            )}
             {showLogo ? (
                 <img
                     src="/logo-utama.png"
                     alt="FunFram"
-                    className={styles.logo}
+                    className="w-[140px] h-[140px] md:w-[280px] md:h-[280px] object-contain opacity-100 select-none pointer-events-none"
                     onError={(e) => {
                         e.currentTarget.style.display = 'none';
                     }}
                 />
             ) : (
-                <div className={styles.searchingAnimationBox}>
-                    <div className={styles.pulseCircle}>
-                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={styles.cameraIcon}>
+                <div className="z-[1] relative flex items-center justify-center">
+                    <div className="w-24 h-24 rounded-full flex items-center justify-center bg-gradient-to-br from-[#00C6FF] via-blue-500 to-purple-500 relative animate-[pulseGlow_2s_infinite_cubic-bezier(0.4,0,0.2,1)] before:content-[''] before:absolute before:-inset-4 before:rounded-full before:border-2 before:border-blue-500/40 before:animate-[pulseRing_2s_infinite_cubic-bezier(0.4,0,0.2,1)]">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-white">
                             <path d="M23 7l-7 5 7 5V7z" />
                             <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
                         </svg>
                     </div>
                 </div>
             )}
-            
-            <div className={styles.textContainer}>
-                {text && <span className={styles.text}>{isSearching ? 'Searching for a new friend...' : text}</span>}
-                {isSearching && <span className={styles.subtext}>The next person will appear soon</span>}
+
+            <div className="z-[1] flex flex-col items-center gap-2 text-center">
+                {text && <span className="text-slate-900 text-lg font-semibold tracking-[0.01em]">{isSearching ? 'Searching for a new friend...' : text}</span>}
+                {isSearching && <span className="text-slate-500 text-sm font-medium">The next person will appear soon</span>}
             </div>
         </div>
     );
 }
-
-

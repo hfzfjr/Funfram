@@ -8,7 +8,6 @@ import GameVideoDock from '@/components/frame/GameVideoDock';
 import ChessGame from '@/components/frame/games/ChessGame';
 import UnoGame from '@/components/frame/games/UnoGame';
 import LudoGame from '@/components/frame/games/LudoGame';
-import styles from './GameScene.module.css';
 
 export default function GameScene() {
   const activeGameType = useCallStore(state => state.activeGameType);
@@ -22,11 +21,10 @@ export default function GameScene() {
     () => [...leftParticipants, ...rightParticipants],
     [leftParticipants, rightParticipants]
   );
-  
 
-  // Local timer for display (sync only when round/status/timeRemaining changes, not on every canvas stroke)
   const [timer, setTimer] = useState<number>(0);
   const [showCorrect, setShowCorrect] = useState(false);
+
   useEffect(() => {
     if (!gameState) return;
     setTimer(gameState.timeRemaining);
@@ -61,11 +59,12 @@ export default function GameScene() {
     };
   }, []);
 
-
+  const containerClass =
+    'flex flex-col md:flex-row h-full bg-gradient-to-br from-slate-100 to-slate-200 text-slate-900 rounded-lg overflow-hidden';
 
   if (activeGameType === 'chess' || activeGameType === 'uno' || activeGameType === 'ludo') {
     return (
-      <div className={styles.container}>
+      <div className={containerClass}>
         <GameVideoDock />
         {activeGameType === 'chess' && <ChessGame />}
         {activeGameType === 'uno' && <UnoGame />}
@@ -76,9 +75,9 @@ export default function GameScene() {
 
   if (!gameState) {
     return (
-      <div className={styles.container}>
+      <div className={containerClass}>
         <GameVideoDock />
-        <div className={styles.loading} style={{ flex: 1 }}>Loading game...</div>
+        <div className="flex-1 text-3xl text-center mt-8 font-semibold">Loading game...</div>
       </div>
     );
   }
@@ -97,30 +96,38 @@ export default function GameScene() {
   };
 
   return (
-    <div className={styles.container}>
+    <div className={containerClass}>
       <GameVideoDock />
-      <div className={styles.canvasWrapper}>
+      <div className="relative flex-[3] p-4 min-w-0">
         <Canvas events={gameState.canvasEvents} isDrawer={isDrawer} isActive={isDrawing} />
-        {showCorrect && <div className={styles.correctToast}>Correct!</div>}
+        {showCorrect && (
+          <div className="absolute top-8 left-1/2 -translate-x-1/2 px-5 py-3 rounded-lg bg-green-600 text-slate-900 text-2xl font-extrabold animate-[popCorrect_1.4s_ease_both]">
+            Correct!
+          </div>
+        )}
       </div>
-      <div className={styles.sidebar}>
-        <div className={styles.statusPanel}>
-          <span className={styles.status}>{gameState.status}</span>
-          <strong className={styles.word}>{wordLabel}</strong>
+      <div className="flex-1 bg-black/[0.03] p-4 flex flex-col gap-4 overflow-y-auto">
+        <div className="flex flex-col gap-2 p-3 border border-black/10 rounded-lg bg-white/60">
+          <span className="text-xs font-bold text-blue-500 uppercase">{gameState.status}</span>
+          <strong className="text-slate-900 text-xl leading-tight break-words">{wordLabel}</strong>
           {gameState.status === 'Reveal' && gameState.currentWord && (
-            <span className={styles.answer}>Answer: {gameState.currentWord}</span>
+            <span className="text-amber-600 text-[0.95rem]">Answer: {gameState.currentWord}</span>
           )}
           {canGuess && (
-            <div style={{ marginTop: '8px' }}>
+            <div className="mt-2">
               <GuessInput onSubmit={submitGuess} />
             </div>
           )}
         </div>
         <ScoreBoard scores={gameState.score} names={playerNames} />
-        <div className={styles.timer}>
+        <div className="text-xl font-bold text-center">
           {gameState.status === 'Countdown' ? `Starts in: ${gameState.drawTimer}s` : `Time left: ${timer}s`}
         </div>
-        <button type="button" className={styles.stopButton} onClick={handleStopGame}>
+        <button
+          type="button"
+          className="w-full border-none rounded-lg p-3 bg-[#93000A] hover:bg-red-700 text-white font-bold cursor-pointer transition-colors"
+          onClick={handleStopGame}
+        >
           Stop Game
         </button>
       </div>

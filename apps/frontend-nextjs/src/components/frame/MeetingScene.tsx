@@ -3,13 +3,11 @@
 import { useCallStore } from '@/store/useCallStore';
 import FramePanel from './FramePanel';
 import PlaceholderTile from './PlaceholderTile';
-import styles from './CallLayout.module.css';
 
 export default function MeetingScene() {
     const fsmState = useCallStore((state) => state.fsmState);
     const matchmakingState = useCallStore((state) => state.matchmakingState);
 
-    // Differentiate placeholder texts
     let placeholderText: string | null = null;
     let showLogo = true;
 
@@ -27,9 +25,9 @@ export default function MeetingScene() {
     const showRightFrame = fsmState === 'MATCHED';
 
     return (
-        <div className={styles.container}>
-            {/* Right Side: Remote Frame (Frame B) or Placeholder (Main on Mobile) */}
-            <div className={`${styles.side} ${styles.remoteSide}`}>
+        <div className="w-full h-full flex-1 flex flex-col md:flex-row gap-4 md:gap-6 p-4 md:p-6 bg-transparent box-border items-center justify-center">
+            {/* Right Side: Remote Frame (Frame B) or Placeholder (Top on Mobile) */}
+            <div className="order-1 md:order-2 w-full max-w-[calc(50dvh-65px)] md:max-w-none md:w-[min(calc(50vw-36px),calc(100dvh-140px))] h-auto md:h-[min(calc(50vw-36px),calc(100dvh-140px))] aspect-square flex-none flex flex-col rounded-lg bg-slate-50 shadow-[0_8px_32px_rgba(59,130,246,0.15),0_0_0_1px_rgba(59,130,246,0.05)]">
                 {showRightFrame ? (
                     <FramePanel side="right" />
                 ) : (
@@ -37,8 +35,8 @@ export default function MeetingScene() {
                 )}
             </div>
 
-            {/* Left Frame: Local Frame (Frame A) (PiP on Mobile) */}
-            <div className={`${styles.side} ${styles.localSide}`}>
+            {/* Left Frame: Local Frame (Frame A) (Bottom on Mobile) */}
+            <div className="order-2 md:order-1 w-full max-w-[calc(50dvh-65px)] md:max-w-none md:w-[min(calc(50vw-36px),calc(100dvh-140px))] h-auto md:h-[min(calc(50vw-36px),calc(100dvh-140px))] aspect-square flex-none flex flex-col rounded-lg bg-slate-50 shadow-[0_8px_32px_rgba(59,130,246,0.15),0_0_0_1px_rgba(59,130,246,0.05)]">
                 <FramePanel side="left" />
             </div>
         </div>

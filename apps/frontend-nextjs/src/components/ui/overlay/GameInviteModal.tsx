@@ -2,7 +2,6 @@
 
 import { WebSocketService } from '@/services/websocket.service';
 import { useCallStore } from '@/store/useCallStore';
-import './InviteFriendsOverlay.css'; // Reuse overlay classes for consistent styling
 
 interface GameInviteModalProps {
     onClose: () => void;
@@ -26,55 +25,41 @@ export default function GameInviteModal({ onClose }: GameInviteModalProps) {
     ];
 
     return (
-        <div className="overlay-backdrop" onClick={onClose}>
-            <div className="overlay-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
-                <div className="overlay-header">
-                    <h2 className="overlay-title">Launch Game</h2>
-                    <button onClick={onClose} className="close-button">✕</button>
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[2000]" onClick={onClose}>
+            <div className="bg-white border border-zinc-100 rounded-xl p-6 max-w-[480px] w-[90%] shadow-xl" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-5">
+                    <h2 className="text-xl font-semibold text-slate-900 m-0">Launch Game</h2>
+                    <button
+                        onClick={onClose}
+                        className="bg-transparent border-none text-zinc-600 hover:text-slate-900 text-2xl cursor-pointer p-1 leading-none transition-colors"
+                    >
+                        ✕
+                    </button>
                 </div>
 
-                <div className="overlay-body">
-                    <p className="overlay-description" style={{ marginBottom: '20px' }}>
+                <div className="flex flex-col gap-4">
+                    <p className="text-sm text-zinc-600 m-0 mb-1">
                         Select an interactive game to play with the opponent frame.
                     </p>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        {games.map(game => (
+                    <div className="flex flex-col gap-3">
+                        {games.map((game) => (
                             <button
                                 key={game.id}
                                 disabled={!game.available}
                                 onClick={() => handleSelectGame(game.id)}
-                                style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '16px',
-                                    padding: '16px',
-                                    borderRadius: '12px',
-                                    border: '1px solid #E2E8F0',
-                                    background: game.available ? '#E0F2FE' : '#F1F5F9',
-                                    textAlign: 'left',
-                                    cursor: game.available ? 'pointer' : 'not-allowed',
-                                    opacity: game.available ? 1 : 0.6,
-                                    transition: 'all 0.2s',
-                                    width: '100%'
-                                }}
-                                className={game.available ? 'hover:border-blue-500 hover:scale-[1.02]' : ''}
+                                className={`flex items-center gap-4 p-4 rounded-xl border border-slate-200 text-left w-full transition-all duration-200 ${
+                                    game.available
+                                        ? 'bg-sky-100 hover:border-blue-500 hover:scale-[1.02] cursor-pointer'
+                                        : 'bg-slate-100 opacity-60 cursor-not-allowed'
+                                }`}
                             >
-                                <span style={{ fontSize: '32px' }}>{game.icon}</span>
-                                <div style={{ flex: 1 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <span style={{ fontWeight: '600', color: '#0F172A', fontSize: '15px' }}>{game.name}</span>
-                                        {!game.available && (
-                                            <span style={{
-                                                fontSize: '10px',
-                                                background: '#CBD5E1',
-                                                color: '#334155',
-                                                padding: '2px 6px',
-                                                borderRadius: '4px'
-                                            }}>SOON</span>
-                                        )}
+                                <span className="text-[32px]">{game.icon}</span>
+                                <div className="flex-1">
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-semibold text-slate-900 text-[15px]">{game.name}</span>
                                     </div>
-                                    <p style={{ fontSize: '12px', color: '#64748B', margin: '4px 0 0 0' }}>{game.desc}</p>
+                                    <p className="text-xs text-slate-500 mt-1 mb-0">{game.desc}</p>
                                 </div>
                             </button>
                         ))}
@@ -84,4 +69,3 @@ export default function GameInviteModal({ onClose }: GameInviteModalProps) {
         </div>
     );
 }
-

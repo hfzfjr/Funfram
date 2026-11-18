@@ -1,7 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
 import { Participant } from '@/types/participant';
 import { useCallStore } from '@/store/useCallStore';
-import styles from './VideoTile.module.css';
 
 interface VideoTileProps {
     participant: Participant;
@@ -130,45 +129,54 @@ export default function VideoTile({ participant }: VideoTileProps) {
     const networkQuality = participant.networkQuality || 'good';
 
     return (
-        <div className={`${styles.container} ${isLocalVideo ? styles.localContainer : ''}`}>
+        <div
+            className={`relative w-full h-full rounded-lg overflow-hidden ${
+                isLocalVideo
+                    ? 'p-[3px] bg-gradient-to-br from-[#00C6FF] via-blue-500 to-purple-500'
+                    : 'bg-slate-50'
+            }`}
+        >
             {participant.stream ? (
                 <video
                     ref={videoRef}
                     autoPlay
                     playsInline
                     muted={isLocalVideo || participant.isMuted || isAutoplayBlocked}
-                    className={`${styles.video} ${isLocalVideo ? styles.mirrored : ''} ${showLoading ? styles.blurred : ''}`}
+                    className={`w-full h-full object-cover object-center ${
+                        isLocalVideo ? '-scale-x-100 rounded-[2px]' : ''
+                    } ${showLoading ? 'blur-[8px] transition-[filter] duration-300' : ''}`}
                 />
             ) : (
-                <div className={styles.placeholder}>
-                    <span className={styles.initials}>{getInitials(participant.name)}</span>
+                <div className={`w-full h-full flex items-center justify-center bg-slate-50 ${isLocalVideo ? 'rounded-[2px]' : ''}`}>
+                    <span className="text-2xl font-semibold text-slate-800">{getInitials(participant.name)}</span>
                 </div>
             )}
 
             {showLoading && (
-                <div className={styles.loadingOverlay}>
-                    <div className={styles.loadingSpinner}></div>
-                    <div className={styles.loadingText}>{loadingText}</div>
+                <div className="absolute inset-0 bg-slate-900/50 flex flex-col items-center justify-center z-10 backdrop-blur-[4px]">
+                    <div className="w-10 h-10 border-[3px] border-white/10 rounded-full border-t-violet-500 animate-spin mb-3"></div>
+                    <div className="text-slate-50 text-sm font-medium">{loadingText}</div>
                 </div>
             )}
 
             {showNetworkQuality && (
-                <div className={styles.networkQuality} title={`Kualitas jaringan: ${networkQuality === 'medium' ? 'Sedang' : 'Buruk'}`}>
-                    <div className={`${styles.networkBar} ${networkQuality === 'medium' ? styles.medium : styles.poor}`}></div>
-                    <div className={`${styles.networkBar} ${networkQuality === 'medium' ? styles.medium : ''}`}></div>
-                    <div className={`${styles.networkBar} ${networkQuality === 'medium' ? styles.medium : ''}`}></div>
+                <div
+                    className="absolute top-4 right-4 flex items-end gap-[3px] px-2.5 py-2 bg-slate-900/65 rounded-full z-[5] backdrop-blur-md border border-white/5 h-8"
+                    title={`Kualitas jaringan: ${networkQuality === 'medium' ? 'Sedang' : 'Buruk'}`}
+                >
+                    <div className={`w-1 h-[6px] rounded-[2px] transition-colors ${networkQuality === 'medium' ? 'bg-amber-500' : 'bg-red-500'}`}></div>
+                    <div className={`w-1 h-[10px] rounded-[2px] transition-colors ${networkQuality === 'medium' ? 'bg-amber-500' : 'bg-white/20'}`}></div>
+                    <div className={`w-1 h-[14px] rounded-[2px] transition-colors ${networkQuality === 'medium' ? 'bg-amber-500' : 'bg-white/20'}`}></div>
                 </div>
             )}
 
-            {/* Overlay Tap to Unmute dihapus demi UX. Audio akan otomatis aktif saat user menyentuh/klik layar */}
-
-            <div className={styles.overlay}>
-                <div className={styles.liveIndicator}></div>
-                <span className={styles.name}>{participant.name}</span>
+            <div className="absolute top-4 left-4 flex items-center gap-2 bg-slate-900/65 px-3.5 py-1.5 rounded-full z-[5] backdrop-blur-md border border-white/5">
+                <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
+                <span className="text-slate-50 text-sm font-medium leading-none">{participant.name}</span>
             </div>
-            <div className={styles.statusIcons}>
+            <div className="absolute bottom-4 right-4 flex items-center gap-2 z-[5]">
                     {participant.isMuted && (
-                        <div className={styles.statusIcon} title="Microphone off">
+                        <div className="flex items-center justify-center w-9 h-9 bg-white/85 border border-black/10 rounded-full text-slate-800 backdrop-blur-md" title="Microphone off">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                 <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
                                 <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
@@ -178,7 +186,7 @@ export default function VideoTile({ participant }: VideoTileProps) {
                         </div>
                     )}
                     {participant.isCameraOff && (
-                        <div className={styles.statusIcon} title="Camera off">
+                        <div className="flex items-center justify-center w-9 h-9 bg-white/85 border border-black/10 rounded-full text-slate-800 backdrop-blur-md" title="Camera off">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                 <path d="M15 10l4.553-2.276A1 1 0 0 1 21 8.618V15.382a1 1 0 0 1-1.447.894L15 14" />
                                 <rect x="3" y="7" width="12" height="10" rx="2" />

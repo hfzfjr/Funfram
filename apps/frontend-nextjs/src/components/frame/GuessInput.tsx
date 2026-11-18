@@ -1,5 +1,4 @@
 import React from 'react';
-import styles from './GuessInput.module.css';
 
 interface Props {
   onSubmit: (guess: string) => void;
@@ -15,15 +14,20 @@ export default function GuessInput({ onSubmit }: Props) {
     }
   };
   return (
-    <form onSubmit={handle} className={styles.form}>
+    <form onSubmit={handle} className="w-full">
       <input
         type="text"
         placeholder="Enter guess..."
         value={value}
         onChange={e => setValue(e.target.value)}
-        className={styles.input}
+        className="w-full px-4 py-3 rounded-lg bg-white border border-slate-300 focus:border-indigo-600 text-slate-900 text-base outline-none transition-colors"
       />
-      <button type="submit" className={styles.button}>Send</button>
+      <button
+        type="submit"
+        className="mt-2 w-full p-3 bg-indigo-600 hover:bg-indigo-700 text-white border-none rounded-lg font-bold cursor-pointer transition-colors"
+      >
+        Send
+      </button>
     </form>
   );
 }

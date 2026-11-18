@@ -12,8 +12,6 @@ import GameInviteModal from '../ui/overlay/GameInviteModal';
 import ReturnToLobbyButton from '../ui/button/ReturnToLobbyButton';
 import InviteFriendsButton from '../ui/button/InviteFriendsButton';
 import InviteFriendsOverlay from '../ui/overlay/InviteFriendsOverlay';
-import '../ui/overlay/InviteFriendsOverlay.css';
-import './navigation.css';
 
 interface NavigationProps {
   onLeave?: () => void;
@@ -88,8 +86,8 @@ export default function Navigation({
 
   return (
     <>
-      <div className="navigation-overlay">
-        <div className="navigation-content">
+      <div className="fixed bottom-3 md:bottom-6 left-1/2 -translate-x-1/2 z-[1000] bg-white shadow-[0_4px_20px_rgba(0,0,0,0.05)] rounded-[34px] md:rounded-full px-4 py-2 md:px-6 md:py-3 h-[68px] md:h-auto border border-black/10 flex items-center box-border">
+        <div className="flex items-center gap-3">
           {/* Start/Next Frame Button - Always available for owner in FRAME, SEARCHING, MATCHED */}
           {isOwner && (fsmState === 'FRAME' || fsmState === 'SEARCHING' || fsmState === 'MATCHED') && (
             <NextFrameButton
@@ -117,17 +115,17 @@ export default function Navigation({
 
           <LeaveFrameButton onClick={onLeave} />
 
-          <div className="separator"></div>
+          <div className="w-px h-8 bg-black/10 rounded-sm mx-1"></div>
 
           <MicrophoneButton onClick={onMic} isOn={isMicOn} />
 
-          <div className="separator"></div>
+          <div className="w-px h-8 bg-black/10 rounded-sm mx-1"></div>
 
           <ChatButton onClick={handleChatClick} hasUnread={hasUnreadChat} />
 
           {isOwner && fsmState === 'FRAME' && (
             <>
-              <div className="separator"></div>
+              <div className="w-px h-8 bg-black/10 rounded-sm mx-1"></div>
               <InviteFriendsButton onClick={() => setShowInviteOverlay(true)} />
             </>
           )}
