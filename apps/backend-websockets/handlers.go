@@ -48,6 +48,12 @@ type ReportUserPayload struct {
 	Reason       string `json:"reason"`
 }
 
+type RejoinSessionPayload struct {
+	UserID   string `json:"userId"`
+	FrameID  string `json:"frameId"`
+	Username string `json:"username"`
+}
+
 type GameInvitePayload struct {
 	SessionID string `json:"sessionId"`
 	GameType  string `json:"gameType"`
@@ -162,6 +168,63 @@ func cleanupMatchForLobby(hub *Hub, lobbyID string) (string, string) {
 	return activeMatchID, otherLobbyID
 }
 
+func finalizeClientDisconnect(hub *Hub, client *Client) {
+	lobbyID := client.LobbyID
+	userID := client.ID
+
+	if client.IsLobbyOwner {
+		activeMatchID, otherLobbyID := cleanupMatchForLobby(hub, lobbyID)
+		if otherLobbyID != "" {
+			hub.broadcastEventToLobby(otherLobbyID, "PLAYER_LEFT", map[string]interface{}{
+				"userId":    userID,
+				"frameId":   lobbyID,
+				"sessionId": activeMatchID,
+				"reason":    "DISCONNECT",
+			})
+			hub.broadcastEventToLobby(otherLobbyID, "MATCH_LEFT", map[string]interface{}{})
+			hub.broadcastEventToLobby(otherLobbyID, "PRESENCE_UPDATE", map[string]interface{}{
+				"frameId":  otherLobbyID,
+				"presence": "MATCHING",
+			})
+			hub.AddToMatchmaking(otherLobbyID)
+		}
+
+		hub.mu.RLock()
+		lobby, exists := hub.lobbies[lobbyID]
+		var guests []*Client
+		if exists {
+			for guestID, guestClient := range lobby.Members {
+				if guestID != userID {
+					guests = append(guests, guestClient)
+				}
+			}
+		}
+		hub.mu.RUnlock()
+
+		for _, guestClient := range guests {
+			sendResponse(guestClient.Conn, map[string]interface{}{
+				"event": "FRAME_DESTROYED",
+				"payload": map[string]interface{}{
+					"frameId": lobbyID,
+				},
+			})
+			hub.LeaveLobby(guestClient.ID)
+		}
+	} else if lobbyID != "" {
+		hub.broadcastEventToLobby(lobbyID, "PLAYER_LEFT", map[string]interface{}{
+			"userId":    userID,
+			"frameId":   lobbyID,
+			"reason":    "DISCONNECT",
+		})
+	}
+
+	hub.LeaveLobby(userID)
+	if db != nil && userID != "" {
+		_ = UpsertUserPresence(userID, "OFFLINE", "")
+	}
+	fmt.Printf("❌ Client disconnected: %s\n", userID)
+}
+
 func handleConnections(hub *Hub, ws *websocket.Conn) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -182,9 +245,9 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 	connClients.Store(ws, client)
 	defer connClients.Delete(ws)
 
-	// Set up ping/pong for detecting offline ghost users
-	pongWait := 15 * time.Second
-	pingPeriod := 10 * time.Second
+	// Set up ping/pong for detecting offline ghost users (45s tolerance for mobile/lag spikes)
+	pongWait := 45 * time.Second
+	pingPeriod := 15 * time.Second
 	ws.SetReadDeadline(time.Now().Add(pongWait))
 	ws.SetPongHandler(func(string) error { ws.SetReadDeadline(time.Now().Add(pongWait)); return nil })
 
@@ -204,61 +267,33 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 	fmt.Printf("✅ New WebSocket connection: %s from %s\n", userID, ws.RemoteAddr())
 
 	defer func() {
-		lobbyID := client.LobbyID
-		userID := client.ID
-		
-		if client.IsLobbyOwner {
-			activeMatchID, otherLobbyID := cleanupMatchForLobby(hub, lobbyID)
-			if otherLobbyID != "" {
-				hub.broadcastEventToLobby(otherLobbyID, "PLAYER_LEFT", map[string]interface{}{
-					"userId":    userID,
-					"frameId":   lobbyID,
-					"sessionId": activeMatchID,
-					"reason":    "DISCONNECT",
-				})
-				hub.broadcastEventToLobby(otherLobbyID, "MATCH_LEFT", map[string]interface{}{})
-				hub.broadcastEventToLobby(otherLobbyID, "PRESENCE_UPDATE", map[string]interface{}{
-					"frameId":  otherLobbyID,
-					"presence": "MATCHING",
-				})
-				hub.AddToMatchmaking(otherLobbyID)
-			}
-			
-			hub.mu.RLock()
-			lobby, exists := hub.lobbies[lobbyID]
-			var guests []*Client
-			if exists {
-				for guestID, guestClient := range lobby.Members {
-					if guestID != userID {
-						guests = append(guests, guestClient)
-					}
-				}
-			}
-			hub.mu.RUnlock()
+		hub.mu.Lock()
+		isActiveSocket := client.Conn == ws
+		hub.mu.Unlock()
 
-			for _, guestClient := range guests {
-				sendResponse(guestClient.Conn, map[string]interface{}{
-					"event": "FRAME_DESTROYED",
-					"payload": map[string]interface{}{
-						"frameId": lobbyID,
-					},
-				})
-				hub.LeaveLobby(guestClient.ID)
-			}
-		} else if lobbyID != "" {
-			hub.broadcastEventToLobby(lobbyID, "PLAYER_LEFT", map[string]interface{}{
-				"userId":    userID,
-				"frameId":   lobbyID,
-				"reason":    "DISCONNECT",
-			})
-		}
-
-		hub.LeaveLobby(userID)
-		if db != nil && userID != "" {
-			_ = UpsertUserPresence(userID, "OFFLINE", "")
-		}
 		ws.Close()
-		fmt.Printf("❌ Client disconnected: %s\n", userID)
+		if !isActiveSocket {
+			return
+		}
+
+		// Give a 12-second grace period on unexpected network drops so brief lag/reconnects don't kill the match
+		if !client.ExplicitLeave && client.LobbyID != "" {
+			disconnectedClient := client
+			disconnectedWS := ws
+			disconnectedClient.Presence = "RECONNECTING"
+			fmt.Printf("⏳ Client %s dropped unexpectedly; waiting 12s grace period before cleanup\n", disconnectedClient.ID)
+			disconnectedClient.DisconnectTimer = time.AfterFunc(12*time.Second, func() {
+				hub.mu.Lock()
+				stillDisconnected := disconnectedClient.Conn == disconnectedWS
+				hub.mu.Unlock()
+				if stillDisconnected {
+					finalizeClientDisconnect(hub, disconnectedClient)
+				}
+			})
+			return
+		}
+
+		finalizeClientDisconnect(hub, client)
 	}()
 
 	for {
@@ -515,7 +550,43 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 				}
 			}
 
+		case "REJOIN_SESSION":
+			var payload RejoinSessionPayload
+			if err := json.Unmarshal(msg.Payload, &payload); err != nil || payload.UserID == "" || payload.FrameID == "" {
+				continue
+			}
+			hub.mu.Lock()
+			existing, ok := hub.clients[payload.UserID]
+			if ok && existing.LobbyID == payload.FrameID {
+				if existing.DisconnectTimer != nil {
+					existing.DisconnectTimer.Stop()
+					existing.DisconnectTimer = nil
+				}
+				existing.Conn = ws
+				existing.Presence = "ONLINE"
+				existing.ExplicitLeave = false
+				if client.ID != existing.ID {
+					delete(hub.clients, client.ID)
+				}
+				client = existing
+				userID = existing.ID
+				connClients.Store(ws, existing)
+				hub.mu.Unlock()
+
+				fmt.Printf("🔄 Client %s rejoined frame %s seamlessly\n", existing.ID, payload.FrameID)
+				_ = existing.Send(map[string]interface{}{
+					"event": "SESSION_RESTORED",
+					"payload": map[string]interface{}{
+						"userId":  existing.ID,
+						"frameId": existing.LobbyID,
+					},
+				})
+			} else {
+				hub.mu.Unlock()
+			}
+
 		case "FRAME_LEAVE":
+			client.ExplicitLeave = true
 			var payload FrameLeavePayload
 			if err := json.Unmarshal(msg.Payload, &payload); err != nil {
 				sendError(ws, "Invalid payload")

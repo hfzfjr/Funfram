@@ -17,6 +17,7 @@ class WebSocketServiceClass {
   private url: string;
   private reconnectAttempts = 0;
   private maxReconnectDelay = 10000; // 10 seconds max
+  private hasConnectedOnce = false;
   private onlineHandler: (() => void) | null = null;
   private offlineHandler: (() => void) | null = null;
 
@@ -51,8 +52,13 @@ class WebSocketServiceClass {
 
     this.ws.onopen = () => {
       console.info('WebSocket connected');
+      const isReconnect = this.hasConnectedOnce;
+      this.hasConnectedOnce = true;
       this.reconnectAttempts = 0; // Reset reconnect attempts on successful connection
       this.clearReconnectTimer();
+      if (isReconnect) {
+        this.emitter.emit('WS_RECONNECTED', {});
+      }
     };
 
     this.ws.onmessage = (e) => {
@@ -145,6 +151,7 @@ class WebSocketServiceClass {
   /** Manual disconnect – disables automatic reconnection. */
   disconnect() {
     this.shouldReconnect = false;
+    this.hasConnectedOnce = false;
     this.clearReconnectTimer();
     if (this.ws) {
       this.ws.close(1000, 'Client disconnect');

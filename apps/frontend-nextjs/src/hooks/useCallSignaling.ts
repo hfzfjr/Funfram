@@ -415,6 +415,17 @@ export function useCallSignaling({
       }
     };
 
+    const onWsReconnected = () => {
+      const store = useCallStore.getState();
+      if (store.localUser?.id && store.localUser.id !== 'pending' && store.frameId) {
+        ws.sendEvent('REJOIN_SESSION', {
+          userId: store.localUser.id,
+          frameId: store.frameId,
+          username: store.localUser.name,
+        });
+      }
+    };
+
     ws.on('ERROR', onError);
     ws.on('FRAME_CREATED', onFrameCreated);
     ws.on('FRAME_JOINED', onFrameJoined);
@@ -439,6 +450,7 @@ export function useCallSignaling({
     ws.on('GAME_ACTION', onGameAction);
     ws.on('LOBBY_RETURNED', onLobbyReturned);
     ws.on('FRAME_DESTROYED', onFrameDestroyed);
+    ws.on('WS_RECONNECTED', onWsReconnected);
 
     return () => {
       clearInterval(streamInterval);
@@ -468,6 +480,7 @@ export function useCallSignaling({
       ws.off('GAME_ACTION', onGameAction);
       ws.off('FRAME_DESTROYED', onFrameDestroyed);
       ws.off('LOBBY_RETURNED', onLobbyReturned);
+      ws.off('WS_RECONNECTED', onWsReconnected);
       ws.off('ERROR', onError);
       ws.off('MATCHMAKING_STARTED', onMatchmakingStarted);
       WebRtcService.getInstance().disconnectAll();

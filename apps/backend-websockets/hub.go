@@ -21,9 +21,11 @@ type Client struct {
 	IsMuted       bool            `json:"isMuted"`
 	IsCameraOff   bool            `json:"isCameraOff"`
 	Presence      string          `json:"presence"` // ONLINE, MATCHING, PLAYING, DRAWING, GUESSING, IDLE, OFFLINE
-	JoinOrder     int             `json:"joinOrder"`
-	LastNextClick time.Time       `json:"-"`
-	BlockedUsers  map[string]bool `json:"-"`
+	JoinOrder       int             `json:"joinOrder"`
+	LastNextClick   time.Time       `json:"-"`
+	BlockedUsers    map[string]bool `json:"-"`
+	ExplicitLeave   bool            `json:"-"`
+	DisconnectTimer *time.Timer     `json:"-"`
 }
 
 func (c *Client) Send(message interface{}) error {
