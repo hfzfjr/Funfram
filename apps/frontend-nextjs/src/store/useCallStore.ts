@@ -75,6 +75,10 @@ export interface CallStore {
     // Rate Limiting Cooldown (FRAME_NEXT)
     lastNextFrameClick: number;
 
+    // Live online count
+    onlineCount: number;
+    setOnlineCount: (count: number) => void;
+
     // FSM State transitions
     setFsmState: (state: AppFsmState) => void;
     setMatchmakingState: (state: MatchmakingState) => void;
@@ -173,6 +177,8 @@ export const useCallStore = create<CallStore>((set, get) => ({
     gameInvite: null,
     gameState: null,
     lastNextFrameClick: 0,
+    onlineCount: 0,
+    setOnlineCount: (onlineCount) => set({ onlineCount }),
 
     setFsmState: (fsmState) => set({ fsmState }),
     setMatchmakingState: (matchmakingState) => set({ matchmakingState }),

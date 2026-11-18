@@ -265,6 +265,12 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 	}()
 
 	fmt.Printf("✅ New WebSocket connection: %s from %s\n", userID, ws.RemoteAddr())
+	_ = client.Send(map[string]interface{}{
+		"event": "ONLINE_COUNT",
+		"payload": map[string]interface{}{
+			"count": hub.GetOnlineCount(),
+		},
+	})
 
 	defer func() {
 		hub.mu.Lock()
@@ -370,6 +376,7 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 			hub.inviteCodes[inviteCode] = dbLobbyID
 			hub.clients[dbUserID] = client
 			hub.mu.Unlock()
+			go hub.BroadcastOnlineCount()
 
 			sendResponse(ws, map[string]interface{}{
 				"event": "FRAME_CREATED",

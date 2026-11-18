@@ -209,6 +209,7 @@ func (h *Hub) JoinLobby(lobbyID, userID, username string, client *Client) error 
 	lobby.Members[userID] = client
 	h.clients[userID] = client
 
+	go h.BroadcastOnlineCount()
 	return nil
 }
 
@@ -254,6 +255,35 @@ func (h *Hub) LeaveLobby(userID string) {
 	}
 
 	delete(h.clients, userID)
+	go h.BroadcastOnlineCount()
+}
+
+func (h *Hub) GetOnlineCount() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.clients)
+}
+
+func (h *Hub) BroadcastOnlineCount() {
+	h.mu.RLock()
+	count := len(h.clients)
+	targets := make([]*Client, 0, count)
+	for _, c := range h.clients {
+		if c != nil && c.Conn != nil {
+			targets = append(targets, c)
+		}
+	}
+	h.mu.RUnlock()
+
+	msg := map[string]interface{}{
+		"event": "ONLINE_COUNT",
+		"payload": map[string]interface{}{
+			"count": count,
+		},
+	}
+	for _, c := range targets {
+		_ = c.Send(msg)
+	}
 }
 
 func lobbiesHaveMutualBlock(a, b *Lobby) bool {

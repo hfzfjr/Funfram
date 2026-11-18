@@ -1,9 +1,16 @@
+'use client';
+
+import { useCallStore } from '@/store/useCallStore';
+
 interface PlaceholderTileProps {
     showLogo?: boolean;
     text?: string | null;
 }
 
 export default function PlaceholderTile({ showLogo = true, text = null }: PlaceholderTileProps) {
+    const onlineCount = useCallStore((state) => state.onlineCount);
+    const localUserId = useCallStore((state) => state.localUser?.id);
+    const effectiveOnlineCount = Math.max(onlineCount, localUserId && localUserId !== 'pending' ? 1 : 0);
     const isSearching = !showLogo && text?.includes('Searching');
 
     return (
@@ -46,6 +53,12 @@ export default function PlaceholderTile({ showLogo = true, text = null }: Placeh
                 {isSearching && (
                     <span className="text-slate-500 text-xs sm:text-sm font-medium">
                         The next person will appear soon
+                    </span>
+                )}
+                {effectiveOnlineCount > 0 && (
+                    <span className="mt-1 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200/80 text-emerald-700 text-xs font-semibold">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        {effectiveOnlineCount} orang sedang online
                     </span>
                 )}
             </div>

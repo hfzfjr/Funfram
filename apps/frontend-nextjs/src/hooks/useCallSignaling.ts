@@ -431,6 +431,11 @@ export function useCallSignaling({
       }
     };
 
+    const onOnlineCount = (payload: any) => {
+      const count = typeof payload?.count === 'number' ? payload.count : 0;
+      useCallStore.getState().setOnlineCount(count);
+    };
+
     ws.on('ERROR', onError);
     ws.on('FRAME_CREATED', onFrameCreated);
     ws.on('FRAME_JOINED', onFrameJoined);
@@ -456,6 +461,7 @@ export function useCallSignaling({
     ws.on('LOBBY_RETURNED', onLobbyReturned);
     ws.on('FRAME_DESTROYED', onFrameDestroyed);
     ws.on('WS_RECONNECTED', onWsReconnected);
+    ws.on('ONLINE_COUNT', onOnlineCount);
 
     return () => {
       clearInterval(streamInterval);
@@ -486,6 +492,7 @@ export function useCallSignaling({
       ws.off('FRAME_DESTROYED', onFrameDestroyed);
       ws.off('LOBBY_RETURNED', onLobbyReturned);
       ws.off('WS_RECONNECTED', onWsReconnected);
+      ws.off('ONLINE_COUNT', onOnlineCount);
       ws.off('ERROR', onError);
       ws.off('MATCHMAKING_STARTED', onMatchmakingStarted);
       WebRtcService.getInstance().disconnectAll();
