@@ -352,7 +352,7 @@ export default function GuessDrawingGame() {
 
   return (
     <>
-      <div className="relative flex-[3] p-4 min-w-0">
+      <div className="relative h-[320px] sm:h-[380px] md:h-auto md:flex-[3] p-2 md:p-4 min-w-0">
         <DrawingCanvas events={gameState.canvasEvents} isDrawer={isDrawer} isActive={isDrawing} />
         {showCorrect && (
           <div className="absolute top-8 left-1/2 -translate-x-1/2 px-5 py-3 rounded-lg bg-green-600 text-white text-2xl font-extrabold animate-[popCorrect_1.4s_ease_both]">

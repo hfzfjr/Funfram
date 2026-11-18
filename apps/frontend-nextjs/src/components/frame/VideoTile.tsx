@@ -151,18 +151,31 @@ export default function VideoTile({ participant }: VideoTileProps) {
                     muted={isLocalVideo || participant.isMuted || isAutoplayBlocked}
                     className={`w-full h-full object-cover object-center ${
                         isLocalVideo ? '-scale-x-100 rounded-[2px]' : ''
-                    } ${showLoading ? 'blur-[8px] transition-[filter] duration-300' : ''}`}
+                    }`}
                 />
             ) : (
-                <div className={`w-full h-full flex items-center justify-center bg-slate-50 ${isLocalVideo ? 'rounded-[2px]' : ''}`}>
-                    <span className="text-2xl font-semibold text-slate-800">{getInitials(participant.name)}</span>
+                <div className={`w-full h-full flex flex-col items-center justify-center gap-3 bg-gradient-to-br from-slate-100 via-sky-50 to-indigo-100 ${isLocalVideo ? 'rounded-[2px]' : ''}`}>
+                    <div className="relative flex items-center justify-center">
+                        {showLoading && (
+                            <span className="absolute -inset-2 rounded-full border-2 border-sky-400/50 animate-ping" />
+                        )}
+                        <div className="w-16 h-16 rounded-full bg-white/90 border border-slate-200 shadow-sm flex items-center justify-center">
+                            <span className="text-xl font-bold text-slate-800">{getInitials(participant.name)}</span>
+                        </div>
+                    </div>
+                    {showLoading && (
+                        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/85 border border-slate-200/80 shadow-xs text-xs font-medium text-slate-600">
+                            <span className="w-2 h-2 rounded-full bg-sky-500 animate-pulse" />
+                            <span>{loadingText}</span>
+                        </div>
+                    )}
                 </div>
             )}
 
-            {showLoading && (
-                <div className="absolute inset-0 bg-slate-900/50 flex flex-col items-center justify-center z-10 backdrop-blur-[4px]">
-                    <div className="w-10 h-10 border-[3px] border-white/10 rounded-full border-t-violet-500 animate-spin mb-3"></div>
-                    <div className="text-slate-50 text-sm font-medium">{loadingText}</div>
+            {showLoading && participant.stream && (
+                <div className="absolute bottom-4 left-4 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-900/75 backdrop-blur-md text-slate-50 text-xs font-medium z-10">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                    <span>{loadingText}</span>
                 </div>
             )}
 

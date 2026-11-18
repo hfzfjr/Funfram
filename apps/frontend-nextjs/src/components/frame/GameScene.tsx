@@ -12,7 +12,7 @@ export default function GameScene() {
   const activeGameType = useCallStore(state => state.activeGameType);
 
   return (
-    <div className="flex flex-col md:flex-row h-full bg-transparent text-slate-900 rounded-lg overflow-hidden gap-3 px-4 pb-2">
+    <div className="flex flex-col md:flex-row md:h-full bg-transparent text-slate-900 rounded-lg md:overflow-hidden gap-3 px-4 pb-2">
       <GameVideoDock />
       {activeGameType === 'chess' && <ChessGame />}
       {activeGameType === 'uno' && <UnoGame />}

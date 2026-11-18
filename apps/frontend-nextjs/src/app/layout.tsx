@@ -1,4 +1,4 @@
-import type { Metadata, Viewport } from "next";
+import type { Metadata } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import CustomAlertModal from '@/components/ui/overlay/CustomAlertModal';
@@ -22,18 +22,13 @@ export const metadata: Metadata = {
   },
 };
 
-export const viewport: Viewport = {
-  themeColor: "#E2E8F0",
-  viewportFit: "cover",
-};
-
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`h-full antialiased ${plusJakartaSans.variable}`}>
+    <html lang="en" className={`antialiased ${plusJakartaSans.variable}`}>
       <body className="antialiased font-sans">
         {children}
         <CustomAlertModal />
