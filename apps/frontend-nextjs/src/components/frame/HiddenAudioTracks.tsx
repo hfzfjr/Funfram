@@ -23,7 +23,7 @@ const ParticipantAudio = ({ participant }: { participant: any }) => {
         }
     }, [participant.stream, participant.isMuted]);
 
-    return <audio ref={audioRef} autoPlay playsInline style={{ display: 'none' }} />;
+    return <audio ref={audioRef} autoPlay playsInline className="hidden" />;
 };
 
 export default function HiddenAudioTracks() {
@@ -36,7 +36,7 @@ export default function HiddenAudioTracks() {
     const remoteParticipants = allParticipants.filter(p => p.id !== localUser?.id && p.stream);
 
     return (
-        <div style={{ display: 'none' }}>
+        <div className="hidden">
             {remoteParticipants.map(p => (
                 <ParticipantAudio key={p.id} participant={p} />
             ))}

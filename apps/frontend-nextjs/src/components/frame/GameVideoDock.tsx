@@ -32,42 +32,14 @@ export default function GameVideoDock() {
   // Desktop: docked vertical camera column beside the game board
   if (!isMobile) {
     return (
-      <aside
-        style={{
-          width: '230px',
-          minWidth: '210px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '10px',
-          padding: '10px',
-          background: 'transparent',
-          borderRadius: '12px',
-          overflowY: 'auto',
-          height: '100%',
-        }}
-      >
-        <div
-          style={{
-            fontSize: '0.75rem',
-            fontWeight: 700,
-            color: '#475569',
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
-          }}
-        >
+      <aside className="w-[230px] min-w-[210px] flex flex-col gap-2.5 p-2.5 bg-transparent rounded-xl overflow-y-auto h-full">
+        <div className="text-xs font-bold text-slate-600 uppercase tracking-[0.06em]">
           Live Cameras ({allParticipants.length})
         </div>
         {allParticipants.map((participant) => (
           <div
             key={participant.id}
-            style={{
-              width: '100%',
-              aspectRatio: '16 / 10',
-              borderRadius: '10px',
-              overflow: 'hidden',
-              background: '#0F172A',
-              flexShrink: 0,
-            }}
+            className="w-full aspect-[16/10] rounded-[10px] overflow-hidden bg-slate-900 shrink-0"
           >
             <VideoTile participant={participant} />
           </div>
@@ -118,69 +90,31 @@ export default function GameVideoDock() {
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       style={{
-        position: 'fixed',
         left: `${pos.x}px`,
         top: `${pos.y}px`,
-        zIndex: 900,
-        width: collapsed ? '132px' : '176px',
-        background: 'rgba(15, 23, 42, 0.92)',
-        backdropFilter: 'blur(8px)',
-        border: '1px solid rgba(148, 163, 184, 0.35)',
-        borderRadius: '14px',
-        padding: '6px',
-        boxShadow: '0 12px 28px rgba(0, 0, 0, 0.38)',
-        touchAction: 'none',
-        cursor: 'grab',
-        userSelect: 'none',
       }}
+      className={`fixed z-[900] ${collapsed ? 'w-[132px]' : 'w-[176px]'} bg-slate-900/92 backdrop-blur-md border border-slate-400/35 rounded-[14px] p-1.5 shadow-[0_12px_28px_rgba(0,0,0,0.38)] touch-none cursor-grab select-none`}
     >
       <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: collapsed ? 0 : '6px',
-          padding: '0 4px',
-          color: '#E2E8F0',
-          fontSize: '0.7rem',
-          fontWeight: 700,
-        }}
+        className={`flex items-center justify-between ${collapsed ? 'mb-0' : 'mb-1.5'} px-1 text-slate-200 text-[0.7rem] font-bold`}
       >
         <span>⋮⋮ Cameras ({allParticipants.length})</span>
         <button
           type="button"
           onClick={() => setCollapsed((c) => !c)}
-          style={{
-            background: 'rgba(255,255,255,0.14)',
-            border: 'none',
-            borderRadius: '6px',
-            color: '#F8FAFC',
-            padding: '2px 6px',
-            fontSize: '0.68rem',
-            cursor: 'pointer',
-          }}
+          className="bg-white/15 border-none rounded-md text-slate-50 px-1.5 py-0.5 text-[0.68rem] cursor-pointer"
         >
           {collapsed ? 'Buka' : 'Mini'}
         </button>
       </div>
 
       <div
-        style={{
-          display: collapsed ? 'none' : 'grid',
-          gridTemplateColumns: allParticipants.length > 2 ? '1fr 1fr' : '1fr',
-          gap: '6px',
-        }}
+        className={`${collapsed ? 'hidden' : 'grid'} ${allParticipants.length > 2 ? 'grid-cols-2' : 'grid-cols-1'} gap-1.5`}
       >
         {allParticipants.map((participant) => (
           <div
             key={participant.id}
-            style={{
-              width: '100%',
-              aspectRatio: '4 / 3',
-              borderRadius: '8px',
-              overflow: 'hidden',
-              background: '#020617',
-            }}
+            className="w-full aspect-[4/3] rounded-lg overflow-hidden bg-slate-950"
           >
             <VideoTile participant={participant} />
           </div>

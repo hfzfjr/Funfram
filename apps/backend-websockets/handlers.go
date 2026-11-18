@@ -45,6 +45,7 @@ type FrameNextPayload struct {
 type GameInvitePayload struct {
 	SessionID string `json:"sessionId"`
 	GameType  string `json:"gameType"`
+	Rounds    int    `json:"rounds"`
 }
 
 type GameAcceptPayload struct {
@@ -645,8 +646,16 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 			hub.mu.RUnlock()
 
 			if activeMatch != nil {
+				rounds := payload.Rounds
+				if rounds < 1 {
+					rounds = 1
+				} else if rounds > 10 {
+					rounds = 10
+				}
+
 				hub.mu.Lock()
 				activeMatch.PendingGameType = payload.GameType
+				activeMatch.PendingRounds = rounds
 				hub.mu.Unlock()
 
 				otherLobby := activeMatch.LobbyA
@@ -666,6 +675,7 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 							"senderName": client.Username,
 							"sessionId":  activeMatch.ID,
 							"gameType":   payload.GameType,
+							"rounds":     rounds,
 						},
 					})
 				}
@@ -683,19 +693,26 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 			}
 
 			gameType := "guess_drawing"
+			rounds := 1
 			hub.mu.RLock()
-			if match, exists := hub.matches[payload.SessionID]; exists && match.PendingGameType != "" {
-				gameType = match.PendingGameType
+			if match, exists := hub.matches[payload.SessionID]; exists {
+				if match.PendingGameType != "" {
+					gameType = match.PendingGameType
+				}
+				if match.PendingRounds > 0 {
+					rounds = match.PendingRounds
+				}
 			}
 			hub.mu.RUnlock()
 
 			hub.broadcastEventToMatch(payload.SessionID, "GAME_START", map[string]interface{}{
 				"sessionId": payload.SessionID,
 				"gameType":  gameType,
+				"rounds":    rounds,
 			})
 
 			if gameType == "guess_drawing" {
-				StartGame(hub, payload.SessionID)
+				StartGameWithRounds(hub, payload.SessionID, rounds)
 			}
 
 		case "GAME_DECLINE":

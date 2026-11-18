@@ -3,16 +3,59 @@ package main
 import (
 	"fmt"
 	"math/rand"
+	"os"
+	"strings"
 	"sync"
 	"time"
 )
 
 var (
-	WordsPool = []string{"Apple", "Banana", "Cat", "Dog", "Elephant", "Flower", "Giraffe", "House", "Ice", "Jungle", "Kite", "Lemon", "Monkey", "Notebook", "Orange", "Penguin", "Queen", "Rabbit", "Sun", "Tree", "Umbrella", "Violin", "Water", "Xylophone", "Yacht", "Zebra"}
+	WordsPool = []string{
+		// Hewan
+		"Kucing", "Anjing", "Gajah", "Jerapah", "Penguin", "Kelinci", "Zebra", "Monyet",
+		"Singa", "Harimau", "Beruang", "Panda", "Lumba-lumba", "Hiu", "Paus", "Gurita",
+		"Kupu-kupu", "Laba-laba", "Kura-kura", "Katak", "Bebek", "Ayam", "Sapi", "Kuda",
+		"Ular", "Burung Hantu", "Elang", "Flamingo", "Kanguru", "Buaya", "Kambing", "Lebah",
+		// Makanan & Minuman
+		"Apel", "Pisang", "Lemon", "Jeruk", "Semangka", "Stroberi", "Nanas", "Mangga",
+		"Pizza", "Burger", "Bakso", "Sate", "Mie Goreng", "Donat", "Kue", "Es Krim",
+		"Biskuit", "Roti", "Keju", "Telur", "Kopi", "Popcorn", "Nasi Goreng", "Alpukat",
+		// Benda Sehari-hari
+		"Payung", "Kunci", "Jam Dinding", "Jam Tangan", "Kacamata", "Topi", "Sepatu", "Tas Ransel",
+		"Buku", "Pensil", "Gunting", "Kamera", "Handphone", "Laptop", "Televisi", "Sapu",
+		"Lampu", "Kursi", "Meja", "Kasur", "Pintu", "Jendela", "Cermin", "Sikat Gigi",
+		"Botol", "Cangkir", "Sendok", "Garpu", "Pisau", "Lilin", "Balon", "Kado",
+		// Alam & Luar Angkasa
+		"Matahari", "Bulan", "Bintang", "Awan", "Hujan", "Pelangi", "Manusia Salju", "Gunung Berapi",
+		"Gunung", "Pohon", "Bunga", "Kaktus", "Daun", "Sungai", "Pulau", "Pantai",
+		"Api", "Petir", "Bumi", "Roket", "Astronot", "UFO", "Planet", "Ombak",
+		// Transportasi & Tempat
+		"Mobil", "Bus", "Kereta Api", "Pesawat", "Helikopter", "Sepeda", "Motor",
+		"Perahu", "Kapal", "Kapal Selam", "Rumah", "Istana", "Tenda", "Jembatan", "Mercusuar",
+		// Musik, Olahraga & Lainnya
+		"Gitar", "Piano", "Biola", "Drum", "Mikrofon", "Headphone", "Mahkota",
+		"Berlian", "Pedang", "Perisai", "Piala", "Bola Sepak", "Bola Basket", "Raket Tenis",
+		"Layangan", "Skateboard", "Robot", "Hantu", "Naga", "Jangkar", "Kompas",
+	}
 
 	engines   = make(map[string]*GameEngine)
 	enginesMu sync.RWMutex
 )
+
+func getWordPool() []string {
+	if extra := strings.TrimSpace(os.Getenv("DRAWING_WORDS")); extra != "" {
+		parts := strings.Split(extra, ",")
+		pool := make([]string, 0, len(WordsPool)+len(parts))
+		pool = append(pool, WordsPool...)
+		for _, p := range parts {
+			if w := strings.TrimSpace(p); w != "" {
+				pool = append(pool, w)
+			}
+		}
+		return pool
+	}
+	return WordsPool
+}
 
 type GuessEvent struct {
 	ID         string `json:"id"`
@@ -39,12 +82,13 @@ type GuessDrawingState struct {
 }
 
 type GameEngine struct {
-	MatchID  string
-	Hub      *Hub
-	State    GuessDrawingState
-	mu       sync.RWMutex
-	stopChan chan struct{}
-	stopOnce sync.Once
+	MatchID   string
+	Hub       *Hub
+	State     GuessDrawingState
+	UsedWords map[string]bool
+	mu        sync.RWMutex
+	stopChan  chan struct{}
+	stopOnce  sync.Once
 }
 
 func (ge *GameEngine) Stop() {
@@ -62,6 +106,16 @@ func cloneScores(src map[string]int) map[string]int {
 }
 
 func StartGame(hub *Hub, matchID string) *GameEngine {
+	return StartGameWithRounds(hub, matchID, 1)
+}
+
+func StartGameWithRounds(hub *Hub, matchID string, rounds int) *GameEngine {
+	if rounds < 1 {
+		rounds = 1
+	} else if rounds > 10 {
+		rounds = 10
+	}
+
 	// Acquire hub.mu BEFORE enginesMu to maintain consistent lock ordering
 	hub.mu.RLock()
 	match, exists := hub.matches[matchID]
@@ -89,18 +143,23 @@ func StartGame(hub *Hub, matchID string) *GameEngine {
 		existing.Stop()
 	}
 
-	queue := make([]string, 0)
+	baseQueue := make([]string, 0)
 	maxLength := len(leftIds)
 	if len(rightIds) > maxLength {
 		maxLength = len(rightIds)
 	}
 	for i := 0; i < maxLength; i++ {
 		if i < len(leftIds) {
-			queue = append(queue, leftIds[i])
+			baseQueue = append(baseQueue, leftIds[i])
 		}
 		if i < len(rightIds) {
-			queue = append(queue, rightIds[i])
+			baseQueue = append(baseQueue, rightIds[i])
 		}
+	}
+
+	queue := make([]string, 0, len(baseQueue)*rounds)
+	for r := 0; r < rounds; r++ {
+		queue = append(queue, baseQueue...)
 	}
 
 	// Initialize scores
@@ -167,8 +226,23 @@ func (ge *GameEngine) runRound(queueIndex int) {
 		return
 	}
 
-	// Pick random word
-	secretWord := WordsPool[rand.Intn(len(WordsPool))]
+	// Pick random unused word from expanded pool
+	pool := getWordPool()
+	available := make([]string, 0, len(pool))
+	if ge.UsedWords == nil {
+		ge.UsedWords = make(map[string]bool)
+	}
+	for _, w := range pool {
+		if !ge.UsedWords[w] {
+			available = append(available, w)
+		}
+	}
+	if len(available) == 0 {
+		ge.UsedWords = make(map[string]bool)
+		available = pool
+	}
+	secretWord := available[rand.Intn(len(available))]
+	ge.UsedWords[secretWord] = true
 
 	// Create word hint
 	hintRunes := []rune(secretWord)
@@ -394,8 +468,42 @@ func (ge *GameEngine) revealAnswer(queueIndex int, winnerName string, points int
 
 func (ge *GameEngine) finishGame() {
 	ge.mu.Lock()
-	ge.State.Status = "Finished"
 	scores := cloneScores(ge.State.Score)
+	ge.mu.Unlock()
+
+	// Determine overall winner name(s)
+	topScore := -1
+	var topIDs []string
+	for pID, sc := range scores {
+		if sc > topScore {
+			topScore = sc
+			topIDs = []string{pID}
+		} else if sc == topScore {
+			topIDs = append(topIDs, pID)
+		}
+	}
+
+	winnerLabel := "Belum ada pemenang"
+	if topScore > 0 && len(topIDs) > 0 {
+		ge.Hub.mu.RLock()
+		names := make([]string, 0, len(topIDs))
+		for _, id := range topIDs {
+			if c, ok := ge.Hub.clients[id]; ok && c.Username != "" {
+				names = append(names, c.Username)
+			}
+		}
+		ge.Hub.mu.RUnlock()
+
+		if len(names) == 1 {
+			winnerLabel = names[0]
+		} else if len(names) > 1 {
+			winnerLabel = "Seri (" + strings.Join(names, " & ") + ")"
+		}
+	}
+
+	ge.mu.Lock()
+	ge.State.Status = "Finished"
+	ge.State.Winner = &winnerLabel
 	ge.mu.Unlock()
 
 	ge.broadcastStateUpdate()

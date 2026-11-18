@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { WebSocketService } from '@/services/websocket.service';
 import { useCallStore } from '@/store/useCallStore';
 
@@ -10,15 +11,17 @@ interface GameInviteModalProps {
 export default function GameInviteModal({ onClose }: GameInviteModalProps) {
     const ws = WebSocketService.getInstance();
     const sessionId = useCallStore((state) => state.sessionId);
+    const [rounds, setRounds] = useState<number>(1);
 
     const handleSelectGame = (gameType: string) => {
         if (!sessionId) return;
-        ws.sendEvent('GAME_INVITE', { sessionId, gameType });
+        const clampedRounds = Math.max(1, Math.min(10, Number(rounds) || 1));
+        ws.sendEvent('GAME_INVITE', { sessionId, gameType, rounds: clampedRounds });
         onClose();
     };
 
     const games = [
-        { id: 'guess_drawing', name: 'Guess Drawing', icon: '🎨', available: true, desc: 'Draw a secret word and compete to guess it first!' },
+        { id: 'guess_drawing', name: 'Guess Drawing', icon: '🎨', available: true, desc: 'Gambar kata rahasia dan adu cepat menebak!' },
         { id: 'uno', name: 'UNO Card Game', icon: '🃏', available: true, desc: 'Classic color and number matching card game.' },
         { id: 'chess', name: 'Chess Arena', icon: '👑', available: true, desc: 'Engage in a 1v1 battle of deep logical tactics.' },
         { id: 'ludo', name: 'Ludo Party', icon: '🎲', available: true, desc: 'Roll dice, move tokens, and reach the home base.' }
@@ -27,7 +30,7 @@ export default function GameInviteModal({ onClose }: GameInviteModalProps) {
     return (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[2000]" onClick={onClose}>
             <div className="bg-white border border-zinc-100 rounded-xl p-6 max-w-[480px] w-[90%] shadow-xl" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center justify-between mb-4">
                     <h2 className="text-xl font-semibold text-slate-900 m-0">Launch Game</h2>
                     <button
                         onClick={onClose}
@@ -38,9 +41,24 @@ export default function GameInviteModal({ onClose }: GameInviteModalProps) {
                 </div>
 
                 <div className="flex flex-col gap-4">
-                    <p className="text-sm text-zinc-600 m-0 mb-1">
+                    <p className="text-sm text-zinc-600 m-0">
                         Select an interactive game to play with the opponent frame.
                     </p>
+
+                    <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                        <div>
+                            <div className="text-sm font-semibold text-slate-800">Jumlah Ronde (Guess Drawing)</div>
+                            <div className="text-xs text-slate-500">Putaran menggambar per pemain (1–10)</div>
+                        </div>
+                        <input
+                            type="number"
+                            min={1}
+                            max={10}
+                            value={rounds}
+                            onChange={(e) => setRounds(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
+                            className="w-20 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-900 font-bold text-center text-base md:text-sm outline-none focus:border-blue-500"
+                        />
+                    </div>
 
                     <div className="flex flex-col gap-3">
                         {games.map((game) => (

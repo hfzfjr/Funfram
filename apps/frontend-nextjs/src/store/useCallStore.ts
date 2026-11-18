@@ -43,6 +43,7 @@ export interface GameInvite {
     senderName: string;
     sessionId: string;
     gameType: string;
+    rounds?: number;
 }
 
 export interface CallStore {

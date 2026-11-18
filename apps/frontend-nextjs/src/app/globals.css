@@ -63,6 +63,10 @@ a:focus-visible {
   from { transform: translateX(100%); }
   to { transform: translateX(0); }
 }
+@keyframes slideUp {
+  from { transform: translateY(50px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
 @keyframes pulseDot {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.4; transform: scale(0.85); }

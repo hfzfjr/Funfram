@@ -47,13 +47,13 @@ export default function Navbar() {
                 {/* Center: Navigation (Hidden on mobile) */}
                 <div className="hidden md:flex items-center gap-12 absolute left-1/2 -translate-x-1/2">
                     <Link
-                        href="/funvideo"
+                        href="/"
                         className="relative text-base font-semibold text-slate-900 no-underline pb-2 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-full after:h-0.5 after:bg-gradient-to-br after:from-[#00C6FF] after:via-blue-500 after:to-purple-500 after:rounded-sm"
                     >
                         FunVideo
                     </Link>
                     <a
-                        href="/funchat"
+                        href="#"
                         onClick={handleFunChatClick}
                         className="relative text-base font-medium text-slate-400 hover:text-slate-600 no-underline pb-2 transition-colors"
                     >
@@ -94,14 +94,14 @@ export default function Navbar() {
                         </div>
                         <div className="flex flex-col gap-6">
                             <Link
-                                href="/funvideo"
+                                href="/"
                                 className="relative text-lg font-semibold text-slate-900 no-underline pb-2 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-full after:h-0.5 after:bg-gradient-to-br after:from-[#00C6FF] after:via-blue-500 after:to-purple-500 after:rounded-sm"
                                 onClick={() => setShowMobileMenu(false)}
                             >
                                 FunVideo
                             </Link>
                             <a
-                                href="/funchat"
+                                href="#"
                                 onClick={handleFunChatClick}
                                 className="relative text-lg font-medium text-slate-400 hover:text-slate-600 no-underline pb-2 transition-colors"
                             >

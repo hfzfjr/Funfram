@@ -20,77 +20,46 @@ export default function GameInviteNotification() {
     };
 
     return (
-        <div style={{
-            position: 'fixed',
-            bottom: '100px',
-            right: '24px',
-            background: '#FFFFFF',
-            border: '1px solid #E2E8F0',
-            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
-            borderRadius: '16px',
-            padding: '20px',
-            zIndex: 9999,
-            width: '320px',
-            animation: 'slideUp 0.3s ease-out',
-            color: '#0F172A',
-        }}>
-            <style jsx>{`
-                @keyframes slideUp {
-                    from { transform: translateY(50px); opacity: 0; }
-                    to { transform: translateY(0); opacity: 1; }
-                }
-            `}</style>
-            
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-                <span style={{ fontSize: '28px' }}>🎮</span>
+        <div className="fixed bottom-[100px] right-6 bg-white border border-slate-200 shadow-xl rounded-2xl p-5 z-[9999] w-80 animate-[slideUp_0.3s_ease-out] text-slate-900">
+            <div className="flex items-center gap-3 mb-3">
+                <span className="text-[28px] leading-none">🎮</span>
                 <div>
-                    <h4 style={{ margin: 0, fontWeight: '600', fontSize: '15px' }}>Incoming Game Invite</h4>
-                    <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#64748B' }}>
-                        From owner <strong style={{ color: '#ec4899' }}>{gameInvite.senderName}</strong>
+                    <h4 className="m-0 font-semibold text-[15px]">Incoming Game Invite</h4>
+                    <p className="mt-0.5 mb-0 text-xs text-slate-500">
+                        From owner <strong className="text-pink-500">{gameInvite.senderName}</strong>
                     </p>
                 </div>
             </div>
             
-            <p style={{ fontSize: '13px', color: '#475569', margin: '0 0 16px 0' }}>
-                They have invited you to play a round of <strong>Guess Drawing</strong>.
+            <p className="text-[13px] text-slate-600 mt-0 mb-4">
+                Mengajak bermain{' '}
+                <strong>
+                    {gameInvite.gameType === 'uno'
+                        ? 'UNO Card Game'
+                        : gameInvite.gameType === 'chess'
+                        ? 'Chess Arena'
+                        : gameInvite.gameType === 'ludo'
+                        ? 'Ludo Party'
+                        : 'Guess Drawing'}
+                </strong>
+                {(!gameInvite.gameType || gameInvite.gameType === 'guess_drawing') && (
+                    <span>
+                        {' '}• <strong>{gameInvite.rounds || 1} Ronde</strong>
+                    </span>
+                )}
+                .
             </p>
             
-            <div style={{ display: 'flex', gap: '10px' }}>
+            <div className="flex gap-2.5">
                 <button
                     onClick={handleAccept}
-                    style={{
-                        flex: 1,
-                        background: 'linear-gradient(to right, #ec4899, #8b5cf6)',
-                        color: 'white',
-                        border: 'none',
-                        padding: '10px 16px',
-                        borderRadius: '8px',
-                        fontWeight: '600',
-                        fontSize: '13px',
-                        cursor: 'pointer',
-                        transition: 'transform 0.1s'
-                    }}
-                    onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.95)'}
-                    onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                    className="flex-1 bg-gradient-to-r from-pink-500 to-violet-500 text-white border-none px-4 py-2.5 rounded-lg font-semibold text-[13px] cursor-pointer transition-transform duration-100 active:scale-95"
                 >
                     Accept
                 </button>
                 <button
                     onClick={handleDecline}
-                    style={{
-                        flex: 1,
-                        background: '#F1F5F9',
-                        color: '#334155',
-                        border: '1px solid #E2E8F0',
-                        padding: '10px 16px',
-                        borderRadius: '8px',
-                        fontWeight: '600',
-                        fontSize: '13px',
-                        cursor: 'pointer',
-                        transition: 'transform 0.1s'
-                    }}
-                    onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.95)'}
-                    onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                    className="flex-1 bg-slate-100 text-slate-700 border border-slate-200 px-4 py-2.5 rounded-lg font-semibold text-[13px] cursor-pointer transition-transform duration-100 active:scale-95"
                 >
                     Decline
                 </button>

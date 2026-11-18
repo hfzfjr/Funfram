@@ -182,51 +182,52 @@ export default function LudoGame() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, padding: '12px', gap: '10px', overflowY: 'auto' }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', width: '100%', maxWidth: '440px', gap: '8px' }}>
+    <div className="flex flex-col items-center flex-1 p-3 gap-2.5 overflow-y-auto">
+      <div className="flex flex-wrap justify-between items-center w-full max-w-[440px] gap-2">
         <div>
-          <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#0F172A' }}>🎲 Ludo Party</h2>
-          <div style={{ fontSize: '0.82rem', color: '#475569' }}>
+          <h2 className="m-0 text-[1.15rem] font-extrabold text-slate-900">🎲 Ludo Party</h2>
+          <div className="text-[0.82rem] text-slate-600">
             Anda: <strong>{myColor === 'red' ? 'Merah (Kiri)' : myColor === 'blue' ? 'Biru (Kanan)' : 'Penonton'}</strong>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={() => syncLudo(INITIAL_LUDO)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#fff', fontWeight: 600, cursor: 'pointer', color: '#0F172A' }}>
+        <div className="flex gap-2">
+          <button
+            onClick={() => syncLudo(INITIAL_LUDO)}
+            className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold cursor-pointer text-slate-900 hover:bg-slate-50 transition-colors"
+          >
             Reset
           </button>
-          <button onClick={handleStopGame} style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: '#DC2626', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>
+          <button
+            onClick={handleStopGame}
+            className="px-3 py-1.5 rounded-lg border-none bg-red-600 hover:bg-red-700 text-white font-semibold cursor-pointer transition-colors"
+          >
             Stop Game
           </button>
         </div>
       </div>
 
       {/* 8x8 Ludo Grid */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(8, 1fr)',
-          width: '100%',
-          maxWidth: '400px',
-          aspectRatio: '1 / 1',
-          gap: '2px',
-          background: '#CBD5E1',
-          padding: '4px',
-          borderRadius: '12px',
-        }}
-      >
+      <div className="grid grid-cols-8 w-full max-w-[400px] aspect-square gap-0.5 bg-slate-300 p-1 rounded-xl">
         {Array.from({ length: 8 }).map((_, r) =>
           Array.from({ length: 8 }).map((__, c) => {
             const loopIdx = LOOP_COORDS.findIndex(([lr, lc]) => lr === r && lc === c);
             const redHomeIdx = RED_HOME_COORDS.findIndex(([hr, hc]) => hr === r && hc === c);
             const blueHomeIdx = BLUE_HOME_COORDS.findIndex(([hr, hc]) => hr === r && hc === c);
 
-            let bg = '#F1F5F9';
+            let bgClass = 'bg-slate-100';
             if (loopIdx !== -1) {
-              bg = loopIdx === 0 ? '#FEE2E2' : loopIdx === 14 ? '#DBEAFE' : SAFE_CELLS.has(loopIdx) ? '#FEF3C7' : '#FFFFFF';
+              bgClass =
+                loopIdx === 0
+                  ? 'bg-red-100'
+                  : loopIdx === 14
+                  ? 'bg-blue-100'
+                  : SAFE_CELLS.has(loopIdx)
+                  ? 'bg-amber-100'
+                  : 'bg-white';
             } else if (redHomeIdx !== -1) {
-              bg = '#FCA5A5';
+              bgClass = 'bg-red-300';
             } else if (blueHomeIdx !== -1) {
-              bg = '#93C5FD';
+              bgClass = 'bg-blue-300';
             }
 
             // Find tokens at this cell
@@ -246,17 +247,7 @@ export default function LudoGame() {
             return (
               <div
                 key={`${r}-${c}`}
-                style={{
-                  background: bg,
-                  borderRadius: '4px',
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '2px',
-                  fontSize: '0.65rem',
-                  position: 'relative',
-                }}
+                className={`${bgClass} rounded flex flex-wrap items-center justify-center gap-0.5 text-[0.65rem] relative`}
               >
                 {SAFE_CELLS.has(loopIdx) && cellTokens.length === 0 ? '★' : null}
                 {cellTokens.map(({ color, idx }) => {
@@ -267,18 +258,9 @@ export default function LudoGame() {
                       type="button"
                       disabled={!movable}
                       onClick={() => handleMoveToken(idx)}
-                      style={{
-                        width: '18px',
-                        height: '18px',
-                        borderRadius: '50%',
-                        border: movable ? '2px solid #0F172A' : '1.5px solid #fff',
-                        background: color === 'red' ? '#EF4444' : '#2563EB',
-                        color: '#fff',
-                        fontWeight: 800,
-                        fontSize: '0.62rem',
-                        cursor: movable ? 'pointer' : 'default',
-                        padding: 0,
-                      }}
+                      className={`w-[18px] h-[18px] rounded-full ${
+                        movable ? 'border-2 border-slate-900 cursor-pointer' : 'border-[1.5px] border-white cursor-default'
+                      } ${color === 'red' ? 'bg-red-500' : 'bg-blue-600'} text-white font-extrabold text-[0.62rem] p-0`}
                     >
                       {idx + 1}
                     </button>
@@ -291,27 +273,23 @@ export default function LudoGame() {
       </div>
 
       {/* Controls: Dice + Base Tokens */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
+      <div className="flex items-center gap-3 flex-wrap justify-center">
         <button
           type="button"
           disabled={!isMyTurn || ludo.dice !== null}
           onClick={handleRollDice}
-          style={{
-            padding: '10px 18px',
-            borderRadius: '10px',
-            border: 'none',
-            background: isMyTurn && ludo.dice === null ? '#0EA5E9' : '#94A3B8',
-            color: '#fff',
-            fontWeight: 800,
-            cursor: isMyTurn && ludo.dice === null ? 'pointer' : 'not-allowed',
-          }}
+          className={`px-[18px] py-2.5 rounded-[10px] border-none text-white font-extrabold ${
+            isMyTurn && ludo.dice === null
+              ? 'bg-sky-500 hover:bg-sky-600 cursor-pointer'
+              : 'bg-slate-400 cursor-not-allowed'
+          }`}
         >
           {ludo.dice !== null ? `Dadu: ${ludo.dice}` : '🎲 Lempar Dadu'}
         </button>
 
         {myColor && (
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.78rem', fontWeight: 700 }}>Base:</span>
+          <div className="flex gap-1.5 items-center">
+            <span className="text-[0.78rem] font-bold">Base:</span>
             {ludo.tokens[myColor].map((pos, idx) =>
               pos === -1 ? (
                 <button
@@ -319,17 +297,11 @@ export default function LudoGame() {
                   type="button"
                   disabled={!isMyTurn || ludo.dice !== 6}
                   onClick={() => handleMoveToken(idx)}
-                  style={{
-                    width: '26px',
-                    height: '26px',
-                    borderRadius: '50%',
-                    border: isMyTurn && ludo.dice === 6 ? '2px solid #0F172A' : '1px solid #fff',
-                    background: myColor === 'red' ? '#EF4444' : '#2563EB',
-                    color: '#fff',
-                    fontWeight: 800,
-                    cursor: isMyTurn && ludo.dice === 6 ? 'pointer' : 'not-allowed',
-                    opacity: isMyTurn && ludo.dice === 6 ? 1 : 0.6,
-                  }}
+                  className={`w-[26px] h-[26px] rounded-full ${
+                    isMyTurn && ludo.dice === 6
+                      ? 'border-2 border-slate-900 cursor-pointer opacity-100'
+                      : 'border border-white cursor-not-allowed opacity-60'
+                  } ${myColor === 'red' ? 'bg-red-500' : 'bg-blue-600'} text-white font-extrabold`}
                 >
                   {idx + 1}
                 </button>
@@ -339,7 +311,7 @@ export default function LudoGame() {
         )}
       </div>
 
-      <div style={{ fontSize: '0.84rem', fontWeight: 600, color: '#1E293B', textAlign: 'center' }}>
+      <div className="text-[0.84rem] font-semibold text-slate-800 text-center">
         {ludo.message}
       </div>
     </div>

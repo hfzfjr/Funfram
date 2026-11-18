@@ -23,12 +23,12 @@ interface UnoSyncState {
   lastAction: string;
 }
 
-const COLOR_HEX: Record<CardColor, string> = {
-  red: '#EF4444',
-  blue: '#3B82F6',
-  green: '#22C55E',
-  yellow: '#EAB308',
-  wild: '#1E293B',
+const COLOR_CLASS: Record<CardColor, string> = {
+  red: 'bg-red-500',
+  blue: 'bg-blue-500',
+  green: 'bg-green-500',
+  yellow: 'bg-yellow-500',
+  wild: 'bg-slate-800',
 };
 
 function createDeck(): UnoCard[] {
@@ -145,7 +145,7 @@ export default function UnoGame() {
   };
 
   if (!game || !localUser) {
-    return <div style={{ padding: '2rem', textAlign: 'center', fontWeight: 600 }}>Menyiapkan kartu UNO...</div>;
+    return <div className="p-8 text-center font-semibold">Menyiapkan kartu UNO...</div>;
   }
 
   const currentTurnId = game.playerOrder[game.turnIndex];
@@ -249,108 +249,85 @@ export default function UnoGame() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, padding: '14px', gap: '12px', overflowY: 'auto' }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+    <div className="flex flex-col flex-1 p-3.5 gap-3 overflow-y-auto">
+      <div className="flex flex-wrap justify-between items-center gap-2">
         <div>
-          <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#0F172A' }}>🃏 UNO Card Game</h2>
-          <div style={{ fontSize: '0.82rem', color: '#475569' }}>
+          <h2 className="m-0 text-[1.15rem] font-extrabold text-slate-900">🃏 UNO Card Game</h2>
+          <div className="text-[0.82rem] text-slate-600">
             {game.winnerId
               ? `🎉 Pemenang: ${playerNames[game.winnerId] || 'Player'}!`
               : `Giliran: ${playerNames[currentTurnId] || 'Player'} ${isMyTurn ? '(Giliran Anda!)' : ''}`}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={handleRestart} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#fff', fontWeight: 600, cursor: 'pointer', color: '#0F172A' }}>
+        <div className="flex gap-2">
+          <button
+            onClick={handleRestart}
+            className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold cursor-pointer text-slate-900 hover:bg-slate-50 transition-colors"
+          >
             Main Lagi
           </button>
-          <button onClick={handleStopGame} style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: '#DC2626', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>
+          <button
+            onClick={handleStopGame}
+            className="px-3 py-1.5 rounded-lg border-none bg-red-600 hover:bg-red-700 text-white font-semibold cursor-pointer transition-colors"
+          >
             Stop Game
           </button>
         </div>
       </div>
 
       {/* Opponent card counts */}
-      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+      <div className="flex gap-2 flex-wrap">
         {game.playerOrder
           .filter((id) => id !== localUser.id)
           .map((id) => (
-            <div key={id} style={{ padding: '6px 12px', borderRadius: '10px', background: '#fff', border: '1px solid #CBD5E1', fontSize: '0.82rem', fontWeight: 600 }}>
+            <div key={id} className="px-3 py-1.5 rounded-[10px] bg-white border border-slate-300 text-[0.82rem] font-semibold">
               {playerNames[id] || 'Player'}: {(game.hands[id] || []).length} kartu
             </div>
           ))}
       </div>
 
       {/* Center table */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '20px', padding: '16px', background: 'rgba(255,255,255,0.65)', borderRadius: '14px' }}>
+      <div className="flex items-center justify-center gap-5 p-4 bg-white/65 rounded-[14px]">
         <button
           type="button"
           disabled={!isMyTurn}
           onClick={handleDrawCard}
-          style={{
-            width: '76px',
-            height: '110px',
-            borderRadius: '12px',
-            border: '3px solid #fff',
-            background: '#0F172A',
-            color: '#fff',
-            fontWeight: 800,
-            cursor: isMyTurn ? 'pointer' : 'not-allowed',
-            opacity: isMyTurn ? 1 : 0.6,
-          }}
+          className={`w-[76px] h-[110px] rounded-xl border-[3px] border-white bg-slate-900 text-white font-extrabold ${
+            isMyTurn ? 'cursor-pointer opacity-100' : 'cursor-not-allowed opacity-60'
+          }`}
         >
           AMBIL
         </button>
 
         <div
-          style={{
-            width: '82px',
-            height: '114px',
-            borderRadius: '12px',
-            border: '3px solid #fff',
-            background: COLOR_HEX[topCard.color],
-            color: '#fff',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontWeight: 800,
-            fontSize: '1.15rem',
-            boxShadow: '0 8px 18px rgba(0,0,0,0.18)',
-          }}
+          className={`w-[82px] h-[114px] rounded-xl border-[3px] border-white ${COLOR_CLASS[topCard.color]} text-white flex flex-col items-center justify-center font-extrabold text-[1.15rem] shadow-[0_8px_18px_rgba(0,0,0,0.18)]`}
         >
           <span>{topCard.value}</span>
-          <span style={{ fontSize: '0.68rem', marginTop: '4px', textTransform: 'uppercase' }}>
+          <span className="text-[0.68rem] mt-1 uppercase">
             {game.activeColor}
           </span>
         </div>
       </div>
 
-      <div style={{ textAlign: 'center', fontSize: '0.82rem', color: '#334155', fontWeight: 600 }}>
+      <div className="text-center text-[0.82rem] text-slate-700 font-semibold">
         {game.lastAction}
       </div>
 
       {pendingWildCard && (
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', alignItems: 'center' }}>
-          <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>Pilih Warna:</span>
+        <div className="flex justify-center gap-2 items-center">
+          <span className="text-[0.85rem] font-bold">Pilih Warna:</span>
           {(['red', 'blue', 'green', 'yellow'] as const).map((col) => (
             <button
               key={col}
               onClick={() => playCard(pendingWildCard, col)}
-              style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '50%',
-                border: '2px solid #fff',
-                background: COLOR_HEX[col],
-                cursor: 'pointer',
-              }}
+              className={`w-8 h-8 rounded-full border-2 border-white ${COLOR_CLASS[col]} cursor-pointer`}
             />
           ))}
         </div>
       )}
 
       {/* Local player hand */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center', paddingTop: '6px' }}>
+      <div className="flex flex-wrap gap-2 justify-center pt-1.5">
         {myHand.map((card) => {
           const playable = isMyTurn && canPlayCard(card);
           return (
@@ -359,20 +336,11 @@ export default function UnoGame() {
               type="button"
               disabled={!playable}
               onClick={() => playCard(card)}
-              style={{
-                width: '64px',
-                height: '92px',
-                borderRadius: '10px',
-                border: playable ? '3px solid #0F172A' : '2px solid rgba(255,255,255,0.8)',
-                background: COLOR_HEX[card.color],
-                color: '#fff',
-                fontWeight: 800,
-                fontSize: '0.9rem',
-                cursor: playable ? 'pointer' : 'not-allowed',
-                opacity: playable ? 1 : 0.55,
-                transform: playable ? 'translateY(-3px)' : 'none',
-                transition: 'transform 0.15s',
-              }}
+              className={`w-16 h-[92px] rounded-[10px] ${
+                playable
+                  ? 'border-[3px] border-slate-900 cursor-pointer opacity-100 -translate-y-[3px]'
+                  : 'border-2 border-white/80 cursor-not-allowed opacity-55'
+              } ${COLOR_CLASS[card.color]} text-white font-extrabold text-[0.9rem] transition-transform duration-150`}
             >
               {card.value}
             </button>

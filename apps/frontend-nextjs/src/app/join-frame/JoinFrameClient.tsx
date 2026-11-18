@@ -81,7 +81,7 @@ export default function JoinFrameClient() {
                 nonce: invitePayload.nonce,
             });
 
-            router.replace(`/funvideo?${nextParams.toString()}`);
+            router.replace(`/?${nextParams.toString()}`);
         } finally {
             setIsChecking(false);
         }

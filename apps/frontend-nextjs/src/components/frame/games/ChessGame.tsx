@@ -233,39 +233,33 @@ export default function ChessGame() {
   const cols = myColor === 'b' ? [7, 6, 5, 4, 3, 2, 1, 0] : [0, 1, 2, 3, 4, 5, 6, 7];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: '12px', padding: '12px', overflowY: 'auto' }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', width: '100%', maxWidth: '460px', gap: '8px' }}>
+    <div className="flex flex-col items-center justify-center flex-1 gap-3 p-3 overflow-y-auto">
+      <div className="flex flex-wrap items-center justify-between w-full max-w-[460px] gap-2">
         <div>
-          <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#0F172A' }}>👑 Chess Arena</h2>
-          <div style={{ fontSize: '0.82rem', color: '#475569' }}>
+          <h2 className="m-0 text-[1.15rem] font-extrabold text-slate-900">👑 Chess Arena</h2>
+          <div className="text-[0.82rem] text-slate-600">
             {winner
               ? `Pemenang: ${winner === 'w' ? 'Putih (Frame Kiri)' : 'Hitam (Frame Kanan)'}!`
               : `Giliran: ${turn === 'w' ? 'Putih' : 'Hitam'} • Anda: ${myColor === 'w' ? 'Putih' : myColor === 'b' ? 'Hitam' : 'Penonton'}`}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={handleReset} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#fff', fontWeight: 600, cursor: 'pointer', color: '#0F172A' }}>
+        <div className="flex gap-2">
+          <button
+            onClick={handleReset}
+            className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold cursor-pointer text-slate-900 hover:bg-slate-50 transition-colors"
+          >
             Reset
           </button>
-          <button onClick={handleStopGame} style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: '#DC2626', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>
+          <button
+            onClick={handleStopGame}
+            className="px-3 py-1.5 rounded-lg border-none bg-red-600 hover:bg-red-700 text-white font-semibold cursor-pointer transition-colors"
+          >
             Stop Game
           </button>
         </div>
       </div>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(8, 1fr)',
-          width: '100%',
-          maxWidth: '440px',
-          aspectRatio: '1 / 1',
-          border: '3px solid #1E293B',
-          borderRadius: '8px',
-          overflow: 'hidden',
-          boxShadow: '0 12px 24px rgba(15,23,42,0.18)',
-        }}
-      >
+      <div className="grid grid-cols-8 w-full max-w-[440px] aspect-square border-[3px] border-slate-800 rounded-lg overflow-hidden shadow-[0_12px_24px_rgba(15,23,42,0.18)]">
         {rows.map((r) =>
           cols.map((c) => {
             const piece = board[r][c];
@@ -278,36 +272,28 @@ export default function ChessGame() {
                 key={`${r}-${c}`}
                 type="button"
                 onClick={() => handleSquareClick(r, c)}
-                style={{
-                  position: 'relative',
-                  border: 'none',
-                  padding: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 'clamp(1.3rem, 4.5vw, 2.2rem)',
-                  cursor: myColor === turn && !winner ? 'pointer' : 'default',
-                  background: isSelected
-                    ? '#FACC15'
+                className={`relative border-none p-0 flex items-center justify-center text-[clamp(1.3rem,4.5vw,2.2rem)] ${
+                  myColor === turn && !winner ? 'cursor-pointer' : 'cursor-default'
+                } ${
+                  isSelected
+                    ? 'bg-yellow-400'
                     : isLight
-                    ? '#F8FAFC'
-                    : '#64748B',
-                  color: piece?.color === 'w' ? '#0F172A' : '#020617',
-                  textShadow: piece?.color === 'w' ? '0 1px 2px rgba(255,255,255,0.9)' : 'none',
-                }}
+                    ? 'bg-slate-50'
+                    : 'bg-slate-500'
+                } ${
+                  piece?.color === 'w'
+                    ? 'text-slate-900 [text-shadow:0_1px_2px_rgba(255,255,255,0.9)]'
+                    : 'text-slate-950'
+                }`}
               >
                 {piece ? PIECE_UNICODE[piece.color + piece.type] : ''}
                 {isLegal && (
                   <span
-                    style={{
-                      position: 'absolute',
-                      width: piece ? '82%' : '28%',
-                      height: piece ? '82%' : '28%',
-                      borderRadius: '50%',
-                      border: piece ? '3px solid rgba(14,165,233,0.85)' : 'none',
-                      background: piece ? 'transparent' : 'rgba(14,165,233,0.65)',
-                      pointerEvents: 'none',
-                    }}
+                    className={`absolute rounded-full pointer-events-none ${
+                      piece
+                        ? 'w-[82%] h-[82%] border-[3px] border-sky-500/85 bg-transparent'
+                        : 'w-[28%] h-[28%] bg-sky-500/65'
+                    }`}
                   />
                 )}
               </button>
@@ -317,7 +303,7 @@ export default function ChessGame() {
       </div>
 
       {lastMove && (
-        <div style={{ fontSize: '0.82rem', color: '#334155', fontWeight: 600 }}>
+        <div className="text-[0.82rem] text-slate-700 font-semibold">
           Langkah terakhir: {lastMove}
         </div>
       )}

@@ -68,6 +68,7 @@ type Match struct {
 	LobbyA          *Lobby
 	LobbyB          *Lobby
 	PendingGameType string
+	PendingRounds   int
 	CreatedAt       time.Time
 	EndedAt         *time.Time
 }
