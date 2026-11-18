@@ -1,20 +1,63 @@
 import { useEffect, useRef, useState } from 'react';
+import { create } from 'zustand';
 import { useCallStore } from '@/store/useCallStore';
 import { WebSocketService } from '@/services/websocket.service';
+import { WebRtcService } from '@/services/webrtc.service';
 
-async function requestUserMedia(): Promise<MediaStream> {
-  const attempts: MediaStreamConstraints[] = [
-    {
-      video: {
+export type FacingMode = 'user' | 'environment';
+
+interface MediaDeviceStoreState {
+  facingMode: FacingMode;
+  videoDevices: MediaDeviceInfo[];
+  audioDevices: MediaDeviceInfo[];
+  selectedVideoId: string;
+  selectedAudioId: string;
+  flipCamera: () => Promise<void>;
+  selectDevices: (videoDeviceId?: string, audioDeviceId?: string) => Promise<void>;
+}
+
+export const useMediaDeviceStore = create<MediaDeviceStoreState>(() => ({
+  facingMode: 'user',
+  videoDevices: [],
+  audioDevices: [],
+  selectedVideoId: '',
+  selectedAudioId: '',
+  flipCamera: async () => {},
+  selectDevices: async () => {},
+}));
+
+async function requestUserMedia(options?: {
+  facingMode?: FacingMode;
+  videoDeviceId?: string;
+  audioDeviceId?: string;
+}): Promise<MediaStream> {
+  const facing = options?.facingMode ?? 'user';
+  const videoConstraint: MediaTrackConstraints = options?.videoDeviceId
+    ? {
+        deviceId: { exact: options.videoDeviceId },
         width: { ideal: 1280 },
         height: { ideal: 1280 },
-        facingMode: { ideal: 'user' },
-      },
-      audio: {
+      }
+    : {
+        width: { ideal: 1280 },
+        height: { ideal: 1280 },
+        facingMode: { ideal: facing },
+      };
+
+  const audioConstraint: MediaTrackConstraints | boolean = options?.audioDeviceId
+    ? {
+        deviceId: { exact: options.audioDeviceId },
         echoCancellation: true,
         noiseSuppression: true,
-      },
-    },
+      }
+    : {
+        echoCancellation: true,
+        noiseSuppression: true,
+      };
+
+  const attempts: MediaStreamConstraints[] = [
+    { video: videoConstraint, audio: audioConstraint },
+    { video: options?.videoDeviceId ? { deviceId: { exact: options.videoDeviceId } } : { facingMode: facing }, audio: true },
     { video: true, audio: true },
     { video: true, audio: false },
   ];
@@ -42,6 +85,52 @@ export function useLocalMedia() {
 
   const setLocalStreamInStore = useCallStore((state) => state.setLocalStream);
 
+  const refreshDevices = async (stream?: MediaStream | null) => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter((d) => d.kind === 'videoinput');
+      const audioDevices = devices.filter((d) => d.kind === 'audioinput');
+      const activeVideoId = stream?.getVideoTracks()[0]?.getSettings().deviceId || '';
+      const activeAudioId = stream?.getAudioTracks()[0]?.getSettings().deviceId || '';
+      useMediaDeviceStore.setState({
+        videoDevices,
+        audioDevices,
+        ...(activeVideoId ? { selectedVideoId: activeVideoId } : {}),
+        ...(activeAudioId ? { selectedAudioId: activeAudioId } : {}),
+      });
+    } catch {
+      // Ignore enumerateDevices errors on restricted browsers
+    }
+  };
+
+  const applyNewStream = async (stream: MediaStream) => {
+    localStreamRef.current = stream;
+    setLocalStreamInStore(stream);
+
+    const newVideoTrack = stream.getVideoTracks()[0] ?? null;
+    const newAudioTrack = stream.getAudioTracks()[0] ?? null;
+
+    if (newVideoTrack) newVideoTrack.enabled = isCamOn;
+    if (newAudioTrack) newAudioTrack.enabled = isMicOn;
+
+    videoTrackRef.current = newVideoTrack;
+    audioTrackRef.current = newAudioTrack;
+
+    const store = useCallStore.getState();
+    if (store.localUser) {
+      const updatedUser = { ...store.localUser, stream };
+      useCallStore.setState({
+        localUser: updatedUser,
+        leftParticipants: store.leftParticipants.map((p) =>
+          p.id === store.localUser?.id ? { ...p, stream } : p
+        ),
+      });
+    }
+
+    WebRtcService.getInstance().setLocalStream(stream);
+    await refreshDevices(stream);
+  };
+
   const stopLocalMedia = () => {
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => track.stop());
@@ -61,8 +150,9 @@ export function useLocalMedia() {
       try {
         stopLocalMedia();
 
+        const { facingMode } = useMediaDeviceStore.getState();
         console.log('🎥 Requesting camera/mic...');
-        const stream = await requestUserMedia();
+        const stream = await requestUserMedia({ facingMode });
         console.log('✅ Camera/mic stream obtained:', stream);
         localStreamRef.current = stream;
         setLocalStreamInStore(stream);
@@ -70,20 +160,16 @@ export function useLocalMedia() {
         audioTrackRef.current = stream.getAudioTracks()[0] ?? null;
         setIsCamOn(Boolean(videoTrackRef.current));
         setIsMicOn(Boolean(audioTrackRef.current));
-        console.log('📹 Video track:', videoTrackRef.current);
-        console.log('🎤 Audio track:', audioTrackRef.current);
 
-        // Update local user stream in store after camera is ready
         const store = useCallStore.getState();
-        console.log('👤 Local user before update:', store.localUser);
         if (store.localUser) {
           store.setLocalUser({
             ...store.localUser,
             stream,
           });
-          console.log('✅ Local user stream updated');
         }
 
+        await refreshDevices(stream);
         return stream;
       } catch (error) {
         console.error('❌ Camera not available:', error);
@@ -99,18 +185,75 @@ export function useLocalMedia() {
     return cameraRequestRef.current;
   };
 
+  const flipCamera = async () => {
+    const currentFacing = useMediaDeviceStore.getState().facingMode;
+    const nextFacing: FacingMode = currentFacing === 'user' ? 'environment' : 'user';
+    const { selectedAudioId } = useMediaDeviceStore.getState();
+
+    try {
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((t) => t.stop());
+      }
+      const stream = await requestUserMedia({
+        facingMode: nextFacing,
+        audioDeviceId: selectedAudioId || undefined,
+      });
+      useMediaDeviceStore.setState({ facingMode: nextFacing });
+      await applyNewStream(stream);
+    } catch (error) {
+      console.error('❌ Failed to flip camera:', error);
+      useCallStore.getState().showCustomAlert('Gagal mengganti kamera depan/belakang pada perangkat ini.');
+    }
+  };
+
+  const selectDevices = async (videoDeviceId?: string, audioDeviceId?: string) => {
+    const state = useMediaDeviceStore.getState();
+    const targetVideoId = videoDeviceId ?? state.selectedVideoId;
+    const targetAudioId = audioDeviceId ?? state.selectedAudioId;
+
+    try {
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((t) => t.stop());
+      }
+      const stream = await requestUserMedia({
+        facingMode: state.facingMode,
+        videoDeviceId: targetVideoId || undefined,
+        audioDeviceId: targetAudioId || undefined,
+      });
+      useMediaDeviceStore.setState({
+        selectedVideoId: targetVideoId,
+        selectedAudioId: targetAudioId,
+      });
+      await applyNewStream(stream);
+    } catch (error) {
+      console.error('❌ Failed to switch media device:', error);
+      useCallStore.getState().showCustomAlert('Gagal mengganti perangkat kamera atau mikrofon.');
+    }
+  };
+
+  // Register device actions and listen for device changes
+  useEffect(() => {
+    useMediaDeviceStore.setState({ flipCamera, selectDevices });
+
+    const handleDeviceChange = () => {
+      void refreshDevices(localStreamRef.current);
+    };
+    navigator.mediaDevices?.addEventListener?.('devicechange', handleDeviceChange);
+    return () => {
+      navigator.mediaDevices?.removeEventListener?.('devicechange', handleDeviceChange);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCamOn, isMicOn]);
+
   // Sync stream to participant whenever camera/mic state changes
   useEffect(() => {
-    console.log('🔄 Stream sync effect triggered, isCamOn:', isCamOn, 'isMicOn:', isMicOn);
     if (localStreamRef.current) {
       const store = useCallStore.getState();
-      console.log('👤 Syncing stream to local user:', store.localUser?.id);
       if (store.localUser) {
         store.setLocalUser({
           ...store.localUser,
           stream: localStreamRef.current,
         });
-        console.log('✅ Local user stream synced');
         if (store.leftParticipants.length > 0) {
           useCallStore.setState({
             localUser: store.localUser ? { ...store.localUser, stream: localStreamRef.current } : null,
@@ -118,11 +261,8 @@ export function useLocalMedia() {
               p.id === store.localUser?.id ? { ...p, stream: localStreamRef.current } : p
             ),
           });
-          console.log('✅ LeftParticipants array updated');
         }
       }
-    } else {
-      console.log('⚠️ No stream to sync');
     }
   }, [isCamOn, isMicOn]);
 

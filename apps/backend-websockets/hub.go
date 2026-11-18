@@ -23,6 +23,7 @@ type Client struct {
 	Presence      string          `json:"presence"` // ONLINE, MATCHING, PLAYING, DRAWING, GUESSING, IDLE, OFFLINE
 	JoinOrder     int             `json:"joinOrder"`
 	LastNextClick time.Time       `json:"-"`
+	BlockedUsers  map[string]bool `json:"-"`
 }
 
 func (c *Client) Send(message interface{}) error {
@@ -253,6 +254,37 @@ func (h *Hub) LeaveLobby(userID string) {
 	delete(h.clients, userID)
 }
 
+func lobbiesHaveMutualBlock(a, b *Lobby) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	for _, mA := range a.Members {
+		for _, mB := range b.Members {
+			if (mA.BlockedUsers != nil && mA.BlockedUsers[mB.ID]) ||
+				(mB.BlockedUsers != nil && mB.BlockedUsers[mA.ID]) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (h *Hub) BlockUser(reporterID, targetID string) {
+	if reporterID == "" || targetID == "" || reporterID == targetID {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	client, ok := h.clients[reporterID]
+	if !ok {
+		return
+	}
+	if client.BlockedUsers == nil {
+		client.BlockedUsers = make(map[string]bool)
+	}
+	client.BlockedUsers[targetID] = true
+}
+
 func (h *Hub) AddToMatchmaking(lobbyID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -271,17 +303,17 @@ func (h *Hub) AddToMatchmaking(lobbyID string) {
 	
 	h.broadcastEventToLobbyLocked(lobbyID, "MATCHMAKING_STARTED", map[string]interface{}{})
 
-	// Count valid alternatives (excluding self and optionally last-match)
+	// Count valid alternatives (excluding self, blocked users, and optionally last-match)
 	validAlternatives := 0
 	for _, waitingLobby := range h.waitingQueue {
-		if waitingLobby.ID != lobbyID && waitingLobby.Status == "WAITING" && len(waitingLobby.Members) > 0 {
+		if waitingLobby.ID != lobbyID && waitingLobby.Status == "WAITING" && len(waitingLobby.Members) > 0 && !lobbiesHaveMutualBlock(lobby, waitingLobby) {
 			validAlternatives++
 		}
 	}
 
 	// Check if there's a waiting lobby to match with
 	for i, waitingLobby := range h.waitingQueue {
-		if waitingLobby.ID != lobbyID && waitingLobby.Status == "WAITING" && len(waitingLobby.Members) > 0 {
+		if waitingLobby.ID != lobbyID && waitingLobby.Status == "WAITING" && len(waitingLobby.Members) > 0 && !lobbiesHaveMutualBlock(lobby, waitingLobby) {
 			// Skip last-match only if there are 2+ alternatives (to prevent instant rematch).
 			// If only 1 alternative exists, match anyway to avoid infinite waiting.
 			if validAlternatives >= 2 {

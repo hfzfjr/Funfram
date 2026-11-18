@@ -42,6 +42,12 @@ type FrameNextPayload struct {
 	SessionID string `json:"sessionId"`
 }
 
+type ReportUserPayload struct {
+	TargetUserID string `json:"targetUserId"`
+	SessionID    string `json:"sessionId"`
+	Reason       string `json:"reason"`
+}
+
 type GameInvitePayload struct {
 	SessionID string `json:"sessionId"`
 	GameType  string `json:"gameType"`
@@ -65,11 +71,6 @@ type GuessSubmitPayload struct {
 type MuteUserPayload struct {
 	TargetUserID string `json:"targetUserId"`
 	IsMuted      bool   `json:"isMuted"`
-}
-
-type ReportUserPayload struct {
-	TargetUserID string `json:"targetUserId"`
-	Reason       string `json:"reason"`
 }
 
 type ChatMessagePayload struct {
@@ -478,6 +479,42 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 
 			hub.AddToMatchmaking(client.LobbyID)
 
+		case "REPORT_USER":
+			var payload ReportUserPayload
+			if err := json.Unmarshal(msg.Payload, &payload); err != nil || payload.TargetUserID == "" {
+				continue
+			}
+			fmt.Printf("[REPORT] User %s (%s) reported %s in session %s (reason: %s)\n", client.ID, client.Username, payload.TargetUserID, payload.SessionID, payload.Reason)
+			hub.BlockUser(client.ID, payload.TargetUserID)
+
+			_ = client.Send(map[string]interface{}{
+				"event": "REPORT_CONFIRMED",
+				"payload": map[string]interface{}{
+					"targetUserId": payload.TargetUserID,
+				},
+			})
+
+			// Automatically skip current match if active
+			if client.LobbyID != "" {
+				activeMatchID, otherLobbyID := cleanupMatchForLobby(hub, client.LobbyID)
+				if activeMatchID != "" || otherLobbyID != "" {
+					hub.broadcastEventToLobby(client.LobbyID, "MATCH_LEFT", map[string]interface{}{})
+					hub.broadcastEventToLobby(client.LobbyID, "PRESENCE_UPDATE", map[string]interface{}{
+						"frameId":  client.LobbyID,
+						"presence": "MATCHING",
+					})
+					if otherLobbyID != "" {
+						hub.broadcastEventToLobby(otherLobbyID, "MATCH_LEFT", map[string]interface{}{})
+						hub.broadcastEventToLobby(otherLobbyID, "PRESENCE_UPDATE", map[string]interface{}{
+							"frameId":  otherLobbyID,
+							"presence": "MATCHING",
+						})
+						hub.AddToMatchmaking(otherLobbyID)
+					}
+					hub.AddToMatchmaking(client.LobbyID)
+				}
+			}
+
 		case "FRAME_LEAVE":
 			var payload FrameLeavePayload
 			if err := json.Unmarshal(msg.Payload, &payload); err != nil {
@@ -862,14 +899,6 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 				"userId":  mutePayload.TargetUserID,
 				"isMuted": mutePayload.IsMuted,
 			})
-
-		case "REPORT_USER":
-			var reportPayload ReportUserPayload
-			if err := json.Unmarshal(msg.Payload, &reportPayload); err != nil {
-				sendError(ws, "Invalid payload")
-				continue
-			}
-			fmt.Printf("⚠️ REPORT USER: %s reported %s for: %s\n", client.Username, reportPayload.TargetUserID, reportPayload.Reason)
 
 		case "RETURN_TO_LOBBY":
 			// Return to lobby without destroying the frame.

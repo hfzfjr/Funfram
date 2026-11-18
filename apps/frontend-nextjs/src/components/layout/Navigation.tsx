@@ -55,6 +55,38 @@ export default function Navigation({
     useCallStore.getState().triggerNextFrame();
   };
 
+  // Desktop keyboard shortcut: press Esc to Start/Next Frame when no modal/input is active
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.repeat) return;
+
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (showSidebar || showGameModal || showInviteOverlay) {
+        setShowSidebar(false);
+        setShowGameModal(false);
+        setShowInviteOverlay(false);
+        return;
+      }
+
+      if (isOwner && (fsmState === 'FRAME' || fsmState === 'MATCHED')) {
+        useCallStore.getState().triggerNextFrame();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOwner, fsmState, showSidebar, showGameModal, showInviteOverlay]);
+
   const handleChatClick = () => {
     setHasUnreadChat(false);
     setShowSidebar(true);
