@@ -178,7 +178,7 @@ export default function VideoTile({ participant }: VideoTileProps) {
                     autoPlay
                     playsInline
                     muted={isLocalVideo || participant.isMuted || isAutoplayBlocked}
-                    className={`w-full h-full object-cover object-center ${
+                    className={`w-full h-full object-cover object-center bg-slate-900 ${
                         isLocalVideo ? `${facingMode === 'user' ? '-scale-x-100 ' : ''}rounded-[2px]` : ''
                     }`}
                 />

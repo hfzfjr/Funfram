@@ -170,11 +170,11 @@ function FunFramContent() {
       {!isAuthenticated && <AuthOverlay onConfirm={handleAuthConfirm} />}
 
       <div
-        className="w-full min-h-[100lvh] md:h-dvh bg-transparent flex flex-col md:overflow-hidden relative shadow-[inset_0_0_100px_rgba(14,165,233,0.1)]"
+        className="w-full h-dvh bg-transparent flex flex-col overflow-hidden relative shadow-[inset_0_0_100px_rgba(14,165,233,0.1)]"
       >
         <FloatingBackgroundIcons />
 
-        <div className="flex-1 flex flex-col pb-[96px] md:pb-24 md:overflow-hidden relative">
+        <div className="flex-1 flex flex-col pb-[82px] md:pb-24 overflow-hidden relative">
           {topAlert && (
             <div className="absolute top-5 left-1/2 -translate-x-1/2 bg-zinc-900 border border-zinc-800 text-sky-500 px-6 py-3 rounded-2xl font-semibold z-[1000] animate-[fadeIn_0.2s_forwards]">
               {topAlert}

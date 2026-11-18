@@ -1,4 +1,5 @@
 import { Participant, FrameSide } from '@/types/participant';
+import { useCallStore } from '@/store/useCallStore';
 import VideoTile from './VideoTile';
 
 interface VideoGridProps {
@@ -7,6 +8,7 @@ interface VideoGridProps {
 }
 
 export default function VideoGrid({ participants }: VideoGridProps) {
+    const localUserId = useCallStore((state) => state.localUser?.id);
     const count = participants.length;
     const gridLayoutClass =
         count <= 1
@@ -20,7 +22,10 @@ export default function VideoGrid({ participants }: VideoGridProps) {
     return (
         <div className={`w-full h-full grid gap-1 md:gap-2 transition-all duration-300 ${gridLayoutClass}`}>
             {participants.map((participant) => (
-                <VideoTile key={participant.id} participant={participant} />
+                <VideoTile
+                    key={participant.id === localUserId ? 'local-user' : participant.id}
+                    participant={participant}
+                />
             ))}
         </div>
     );
