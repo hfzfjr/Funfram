@@ -32,7 +32,11 @@ export class WebRtcService {
 
     public async fetchCloudflareIceServers(): Promise<void> {
         try {
-            const res = await fetch('/api/turn-credentials');
+            const res = await fetch('/api/turn-credentials', {
+                headers: {
+                    'X-Funfram-Client': '1',
+                },
+            });
             if (!res.ok) {
                 console.warn('[WebRtcService] Failed to fetch TURN credentials, falling back to default STUN', await res.text());
                 return;
@@ -87,6 +91,10 @@ export class WebRtcService {
 
             try {
                 const stats = await pc.getStats();
+                if (this.peerConnections.get(participantId) !== pc) {
+                    this.stopStatsPolling(participantId);
+                    return;
+                }
                 let packetsLost = 0;
                 let packetsReceived = 0;
                 let currentRoundTripTime = 0;
@@ -139,7 +147,7 @@ export class WebRtcService {
         this.localStream = stream;
 
         // Update existing peer connections if stream changes
-        this.peerConnections.forEach((pc, participantId) => {
+        this.peerConnections.forEach((pc) => {
             if (this.localStream) {
                 // If we have transceivers, we can replace the track
                 const senders = pc.getSenders();
@@ -156,6 +164,12 @@ export class WebRtcService {
                         } else {
                             pc.addTrack(track, this.localStream!);
                         }
+                    }
+                });
+            } else {
+                pc.getSenders().forEach(sender => {
+                    if (sender.track) {
+                        sender.replaceTrack(null).catch(() => {});
                     }
                 });
             }
@@ -188,6 +202,15 @@ export class WebRtcService {
     public connectToSignalingServer(url: string): Promise<void> {
         return new Promise((resolve, reject) => {
             try {
+                if (this.signalingSocket) {
+                    this.signalingSocket.onopen = null;
+                    this.signalingSocket.onmessage = null;
+                    this.signalingSocket.onerror = null;
+                    this.signalingSocket.onclose = null;
+                    this.signalingSocket.close();
+                    this.signalingSocket = null;
+                }
+
                 this.signalingSocket = new WebSocket(url);
 
                 this.signalingSocket.onopen = () => {
@@ -201,7 +224,11 @@ export class WebRtcService {
                 };
 
                 this.signalingSocket.onmessage = (event) => {
-                    this.handleSignalingMessage(JSON.parse(event.data));
+                    try {
+                        this.handleSignalingMessage(JSON.parse(event.data));
+                    } catch (parseErr) {
+                        console.warn('[WebRtcService] Invalid signaling message:', parseErr);
+                    }
                 };
 
                 this.signalingSocket.onclose = () => {
@@ -406,8 +433,11 @@ export class WebRtcService {
             const wasPreviouslyConnected = this.wasConnected.get(participantId) || false;
             const isNowConnected = pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed';
 
-            if (isNowConnected && !wasPreviouslyConnected) {
-                this.wasConnected.set(participantId, true);
+            if (isNowConnected) {
+                this.iceRestarts.set(participantId, 0);
+                if (!wasPreviouslyConnected) {
+                    this.wasConnected.set(participantId, true);
+                }
             } else if (!isNowConnected && wasPreviouslyConnected) {
                 // Was connected, now disconnected - mark as reconnecting
                 import('@/store/useCallStore').then(module => {
@@ -455,19 +485,7 @@ export class WebRtcService {
             const timestamp = new Date().toISOString();
             console.log(`[WebRtcService][${timestamp}] Connection state with ${participantId}: ${pc.connectionState} - Match/Session ID: ${this.currentRoomId}`);
             if (pc.connectionState === 'failed' as any) {
-                const restarts = this.iceRestarts.get(participantId) || 0;
-                if (restarts < 3) {
-                    this.iceRestarts.set(participantId, restarts + 1);
-                    console.log(`[WebRtcService][${timestamp}] Triggering ICE restart (attempt ${restarts + 1}/3) for ${participantId} due to failed state.`);
-                    try {
-                        pc.restartIce();
-                        this.forceRenegotiate(participantId);
-                    } catch (e) {
-                        console.error('[WebRtcService] restartIce error:', e);
-                    }
-                } else {
-                    console.error(`[WebRtcService][${timestamp}] ICE connection failed permanently for ${participantId}. No more ICE restarts to prevent negotiation loop.`);
-                }
+                console.warn(`[WebRtcService][${timestamp}] Connection state failed for ${participantId} (ICE restart handled by oniceconnectionstatechange).`);
             } else if (pc.connectionState === 'connected') {
                 // Start periodic stats polling
                 this.startStatsPolling(participantId, pc);

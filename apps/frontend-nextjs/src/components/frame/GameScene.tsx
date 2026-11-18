@@ -19,28 +19,41 @@ export default function GameScene() {
   );
   
 
-  // Local timer for display (optional)
+  // Local timer for display (sync only when round/status/timeRemaining changes, not on every canvas stroke)
   const [timer, setTimer] = useState<number>(0);
   const [showCorrect, setShowCorrect] = useState(false);
   useEffect(() => {
     if (!gameState) return;
     setTimer(gameState.timeRemaining);
+  }, [gameState?.currentRound, gameState?.status, gameState?.timeRemaining]);
+
+  useEffect(() => {
+    if (!gameState) return;
     const interval = setInterval(() => {
       setTimer(prev => (prev > 0 ? prev - 1 : 0));
     }, 1000);
     return () => clearInterval(interval);
-  }, [gameState]);
+  }, [gameState?.currentRound, gameState?.status]);
 
   useEffect(() => {
     const ws = WebSocketService.getInstance();
+    let feedbackTimeout: number | null = null;
     const handleGuessFeedback = (payload: { correct?: boolean }) => {
       if (!payload.correct) return;
       setShowCorrect(true);
-      window.setTimeout(() => setShowCorrect(false), 1400);
+      if (feedbackTimeout !== null) {
+        window.clearTimeout(feedbackTimeout);
+      }
+      feedbackTimeout = window.setTimeout(() => setShowCorrect(false), 1400);
     };
 
     ws.on('GUESS_FEEDBACK', handleGuessFeedback);
-    return () => ws.off('GUESS_FEEDBACK', handleGuessFeedback);
+    return () => {
+      ws.off('GUESS_FEEDBACK', handleGuessFeedback);
+      if (feedbackTimeout !== null) {
+        window.clearTimeout(feedbackTimeout);
+      }
+    };
   }, []);
 
 

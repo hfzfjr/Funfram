@@ -142,6 +142,7 @@ function FunVideoContent() {
                 // Also update in leftParticipants array
                 if (store.leftParticipants.length > 0) {
                     useCallStore.setState({
+                        localUser: store.localUser ? { ...store.localUser, stream: localStreamRef.current } : null,
                         leftParticipants: store.leftParticipants.map(p =>
                             p.id === store.localUser?.id ? { ...p, stream: localStreamRef.current } : p
                         )
@@ -277,18 +278,30 @@ function FunVideoContent() {
 
             // Show alert instead of chat message
             setTopAlert(`${participantName} bergabung dalam frame`);
-            setTimeout(() => {
+            if (playerJoinAlertTimeout) {
+                clearTimeout(playerJoinAlertTimeout);
+            }
+            playerJoinAlertTimeout = setTimeout(() => {
                 setTopAlert(null);
             }, 5000);
         };
 
+        let playerJoinAlertTimeout: ReturnType<typeof setTimeout> | null = null;
+        let webrtcConnectGeneration = 0;
+
         const connectWebRTC = async (roomId: string) => {
+            const currentGeneration = ++webrtcConnectGeneration;
             const webrtc = WebRtcService.getInstance();
             const webrtcUrl = process.env.NEXT_PUBLIC_WS_WEBRTC_URL || 'ws://localhost:5002';
             const store = useCallStore.getState();
 
             // Fetch Cloudflare TURN credentials before connecting
             await webrtc.fetchCloudflareIceServers();
+
+            // Abort if a newer connectWebRTC call started while fetching ICE servers
+            if (currentGeneration !== webrtcConnectGeneration) {
+                return;
+            }
 
             // Putuskan koneksi lama terlebih dahulu agar tidak ada koneksi duplikat
             // (contoh: koneksi lobi masih aktif saat MATCH_FOUND tiba)
@@ -517,6 +530,11 @@ function FunVideoContent() {
         ws.on('FRAME_DESTROYED', onFrameDestroyed);
 
         return () => {
+            clearInterval(streamInterval);
+            if (playerJoinAlertTimeout) {
+                clearTimeout(playerJoinAlertTimeout);
+            }
+            webrtcConnectGeneration++;
             ws.off('FRAME_CREATED', onFrameCreated);
             ws.off('FRAME_JOINED', onFrameJoined);
             ws.off('PLAYER_JOIN', onPlayerJoin);
@@ -563,6 +581,7 @@ function FunVideoContent() {
                 // Update in leftParticipants array
                 if (store.leftParticipants.length > 0) {
                     useCallStore.setState({
+                        localUser: store.localUser ? { ...store.localUser, stream: localStreamRef.current } : null,
                         leftParticipants: store.leftParticipants.map(p =>
                             p.id === store.localUser?.id ? { ...p, stream: localStreamRef.current } : p
                         )

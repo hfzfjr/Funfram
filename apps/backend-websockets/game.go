@@ -44,33 +44,49 @@ type GameEngine struct {
 	State    GuessDrawingState
 	mu       sync.RWMutex
 	stopChan chan struct{}
+	stopOnce sync.Once
+}
+
+func (ge *GameEngine) Stop() {
+	ge.stopOnce.Do(func() {
+		close(ge.stopChan)
+	})
+}
+
+func cloneScores(src map[string]int) map[string]int {
+	dst := make(map[string]int, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }
 
 func StartGame(hub *Hub, matchID string) *GameEngine {
+	// Acquire hub.mu BEFORE enginesMu to maintain consistent lock ordering
+	hub.mu.RLock()
+	match, exists := hub.matches[matchID]
+	if !exists {
+		hub.mu.RUnlock()
+		return nil
+	}
+
+	// Construct queue: alternating Frame A and Frame B players
+	leftIds := make([]string, 0, len(match.LobbyA.Members))
+	for id := range match.LobbyA.Members {
+		leftIds = append(leftIds, id)
+	}
+	rightIds := make([]string, 0, len(match.LobbyB.Members))
+	for id := range match.LobbyB.Members {
+		rightIds = append(rightIds, id)
+	}
+	hub.mu.RUnlock()
+
 	enginesMu.Lock()
 	defer enginesMu.Unlock()
 
 	// Stop existing engine for this match if any
 	if existing, ok := engines[matchID]; ok {
-		close(existing.stopChan)
-	}
-
-	hub.mu.RLock()
-	match, exists := hub.matches[matchID]
-	hub.mu.RUnlock()
-
-	if !exists {
-		return nil
-	}
-
-	// Construct queue: alternating Frame A and Frame B players
-	leftIds := make([]string, 0)
-	for id := range match.LobbyA.Members {
-		leftIds = append(leftIds, id)
-	}
-	rightIds := make([]string, 0)
-	for id := range match.LobbyB.Members {
-		rightIds = append(rightIds, id)
+		existing.Stop()
 	}
 
 	queue := make([]string, 0)
@@ -196,6 +212,7 @@ func (ge *GameEngine) runRound(queueIndex int) {
 	ge.State.DrawTimer = 10
 	ge.State.TimeRemaining = 60
 	ge.State.CanvasEvents = make([]interface{}, 0)
+	ge.State.GuessEvents = make([]GuessEvent, 0)
 	ge.State.Winner = nil
 	ge.mu.Unlock()
 
@@ -297,7 +314,11 @@ func (ge *GameEngine) SubmitGuess(playerID, username, text string) {
 		"timestamp":  time.Now().Format("15:04"),
 	})
 
-	if isCorrect {
+	if isCorrect && ge.State.Winner == nil {
+		// Mark winner immediately under lock so concurrent guesses cannot also score
+		winnerCopy := username
+		ge.State.Winner = &winnerCopy
+
 		// Award points: guesser gets 100, drawer gets 50
 		ge.State.Score[playerID] += 100
 		ge.State.Score[ge.State.CurrentDrawerID] += 50
@@ -342,7 +363,7 @@ func (ge *GameEngine) revealAnswer(queueIndex int, winnerName string, points int
 
 	// Broadcast SCORE_UPDATE to all members in session
 	ge.mu.Lock()
-	scores := ge.State.Score
+	scores := cloneScores(ge.State.Score)
 	ge.mu.Unlock()
 	ge.broadcastToMatch("SCORE_UPDATE", map[string]interface{}{
 		"scores": scores,
@@ -374,7 +395,7 @@ func (ge *GameEngine) revealAnswer(queueIndex int, winnerName string, points int
 func (ge *GameEngine) finishGame() {
 	ge.mu.Lock()
 	ge.State.Status = "Finished"
-	scores := ge.State.Score
+	scores := cloneScores(ge.State.Score)
 	ge.mu.Unlock()
 
 	ge.broadcastStateUpdate()
@@ -415,15 +436,15 @@ func (ge *GameEngine) finishGame() {
 	// Broadcast match restore and transition back to meeting layout
 	ge.broadcastToMatch("GAME_END", map[string]interface{}{})
 
-	// Update state in hub
+	// Update state in hub (re-verify match still exists)
 	ge.Hub.mu.Lock()
-	if matchExists {
+	if match, ok := ge.Hub.matches[ge.MatchID]; ok {
 		session := match.ToSession()
-		ge.Hub.broadcastToLobby(match.LobbyA.ID, map[string]interface{}{
+		ge.Hub.broadcastToLobbyLocked(match.LobbyA.ID, map[string]interface{}{
 			"event":   "MATCH_FOUND",
 			"payload": session,
 		})
-		ge.Hub.broadcastToLobby(match.LobbyB.ID, map[string]interface{}{
+		ge.Hub.broadcastToLobbyLocked(match.LobbyB.ID, map[string]interface{}{
 			"event":   "MATCH_FOUND",
 			"payload": session,
 		})
@@ -439,20 +460,28 @@ func (ge *GameEngine) finishGame() {
 func (ge *GameEngine) broadcastDrawStart(drawerID, secretWord, wordHint string) {
 	ge.Hub.mu.RLock()
 	match, exists := ge.Hub.matches[ge.MatchID]
-	ge.Hub.mu.RUnlock()
 	if !exists {
+		ge.Hub.mu.RUnlock()
 		return
 	}
+	members := make([]*Client, 0, len(match.LobbyA.Members)+len(match.LobbyB.Members))
+	for _, client := range match.LobbyA.Members {
+		members = append(members, client)
+	}
+	for _, client := range match.LobbyB.Members {
+		members = append(members, client)
+	}
+	ge.Hub.mu.RUnlock()
 
 	// Drawer gets the full secret word, others get hint
-	sendEventToClient := func(client *Client) {
+	for _, client := range members {
 		isDrawer := (client.ID == drawerID)
 		word := secretWord
 		if !isDrawer {
 			word = ""
 		}
 
-		client.Send(map[string]interface{}{
+		_ = client.Send(map[string]interface{}{
 			"event": "DRAW_START",
 			"payload": map[string]interface{}{
 				"drawerId":   drawerID,
@@ -462,45 +491,46 @@ func (ge *GameEngine) broadcastDrawStart(drawerID, secretWord, wordHint string) 
 			},
 		})
 	}
-
-	for _, client := range match.LobbyA.Members {
-		sendEventToClient(client)
-	}
-	for _, client := range match.LobbyB.Members {
-		sendEventToClient(client)
-	}
 }
 
 func (ge *GameEngine) broadcastStateUpdate() {
 	ge.mu.RLock()
 	state := ge.State
+	state.Score = cloneScores(ge.State.Score)
+	if ge.State.CanvasEvents != nil {
+		state.CanvasEvents = append([]interface{}(nil), ge.State.CanvasEvents...)
+	}
+	if ge.State.GuessEvents != nil {
+		state.GuessEvents = append([]GuessEvent(nil), ge.State.GuessEvents...)
+	}
 	ge.mu.RUnlock()
 
 	// Hide secret word for non-drawers
 	ge.Hub.mu.RLock()
 	match, exists := ge.Hub.matches[ge.MatchID]
-	ge.Hub.mu.RUnlock()
 	if !exists {
+		ge.Hub.mu.RUnlock()
 		return
 	}
+	members := make([]*Client, 0, len(match.LobbyA.Members)+len(match.LobbyB.Members))
+	for _, client := range match.LobbyA.Members {
+		members = append(members, client)
+	}
+	for _, client := range match.LobbyB.Members {
+		members = append(members, client)
+	}
+	ge.Hub.mu.RUnlock()
 
-	sendEventToClient := func(client *Client) {
+	for _, client := range members {
 		clientState := state
 		if client.ID != state.CurrentDrawerID {
 			clientState.CurrentWord = ""
 		}
 
-		client.Send(map[string]interface{}{
+		_ = client.Send(map[string]interface{}{
 			"event":   "GAME_STATE_UPDATE",
 			"payload": clientState,
 		})
-	}
-
-	for _, client := range match.LobbyA.Members {
-		sendEventToClient(client)
-	}
-	for _, client := range match.LobbyB.Members {
-		sendEventToClient(client)
 	}
 }
 

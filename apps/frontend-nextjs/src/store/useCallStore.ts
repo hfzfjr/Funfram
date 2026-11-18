@@ -341,6 +341,20 @@ export const useCallStore = create<CallStore>((set, get) => ({
             return false;
         }
         const state = get();
+        const localStream =
+            state.localUser?.stream ||
+            state.leftParticipants.find(p => p.id === state.localUser?.id)?.stream;
+        const hasActiveCamera = Boolean(
+            localStream &&
+            localStream.getVideoTracks().some(t => t.readyState === 'live' && t.enabled) &&
+            !state.localUser?.isCameraOff
+        );
+
+        if (!hasActiveCamera) {
+            get().showCustomAlert('Kamera harus menyala terlebih dahulu sebelum mencari lawan.', 'error');
+            return false;
+        }
+
         if (!state.sessionId) {
             WebSocketService.getInstance().sendEvent('SEARCH_START', { frameId: state.frameId });
         } else {

@@ -9,11 +9,29 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 )
 
-var db *pgx.Conn
+var db *pgxpool.Pool
+
+func isValidUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, c := range s {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if c != '-' {
+				return false
+			}
+			continue
+		}
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
 
 // Initialize PostgreSQL connection (Supabase)
 func InitDatabase() error {
@@ -27,9 +45,15 @@ func InitDatabase() error {
 	}
 
 	var err error
-	db, err = pgx.Connect(context.Background(), dbURL)
+	db, err = pgxpool.New(context.Background(), dbURL)
 	if err != nil {
 		return fmt.Errorf("failed to connect to database: %w", err)
+	}
+
+	if err := db.Ping(context.Background()); err != nil {
+		db.Close()
+		db = nil
+		return fmt.Errorf("failed to ping database: %w", err)
 	}
 
 	log.Println("Database connected successfully")
@@ -38,7 +62,7 @@ func InitDatabase() error {
 
 func CloseDatabase() {
 	if db != nil {
-		db.Close(context.Background())
+		db.Close()
 	}
 }
 
@@ -55,10 +79,12 @@ func GetOrCreateUser(username string) (string, error) {
 	ctx := context.Background()
 	var userID string
 
-	// Since we need every connection to be unique to avoid overwriting websocket clients,
-	// we will append a short random string to the username if it conflicts,
-	// or we can just always make it unique.
-	uniqueUsername := fmt.Sprintf("%s-%d", username, time.Now().UnixNano()%10000)
+	// Ensure username stays within VARCHAR(50) even with the "-XXXX" suffix
+	baseName := username
+	if len(baseName) > 44 {
+		baseName = baseName[:44]
+	}
+	uniqueUsername := fmt.Sprintf("%s-%d", baseName, time.Now().UnixNano()%10000)
 
 	err := db.QueryRow(ctx,
 		`INSERT INTO users (username) VALUES ($1)
@@ -86,7 +112,7 @@ func GetUserByUsername(username string) (map[string]interface{}, error) {
 
 	ctx := context.Background()
 	var userID string
-	var createdAt string
+	var createdAt time.Time
 
 	err := db.QueryRow(ctx,
 		"SELECT id, created_at FROM users WHERE username = $1",
@@ -100,7 +126,7 @@ func GetUserByUsername(username string) (map[string]interface{}, error) {
 	return map[string]interface{}{
 		"id":         userID,
 		"username":   username,
-		"created_at": createdAt,
+		"created_at": createdAt.Format(time.RFC3339),
 	}, nil
 }
 
@@ -173,8 +199,11 @@ func UpdateLobbyStatus(lobbyID, status string) error {
 }
 
 func UpsertUserPresence(userID, presenceState, sessionID string) error {
-	if db == nil {
-		return fmt.Errorf("database not initialized")
+	if db == nil || !isValidUUID(userID) {
+		return nil
+	}
+	if !isValidUUID(sessionID) {
+		sessionID = ""
 	}
 
 	ctx := context.Background()
@@ -194,14 +223,18 @@ func UpsertUserPresence(userID, presenceState, sessionID string) error {
 }
 
 func UpsertUserDeviceState(userID, sessionID string, cameraEnabled, microphoneEnabled bool) error {
-	if db == nil {
-		return fmt.Errorf("database not initialized")
+	if db == nil || !isValidUUID(userID) {
+		return nil
+	}
+	// user_device_state.session_id references sessions(id); if sessionID is not a valid session UUID, skip FK
+	if !isValidUUID(sessionID) {
+		return nil
 	}
 
 	ctx := context.Background()
 	_, err := db.Exec(ctx, `
 		INSERT INTO user_device_state (user_id, session_id, camera_enabled, microphone_enabled, updated_at)
-		VALUES ($1, NULLIF($2, '')::uuid, $3, $4, NOW())
+		VALUES ($1, $2::uuid, $3, $4, NOW())
 		ON CONFLICT (user_id, session_id)
 		DO UPDATE SET
 			camera_enabled = EXCLUDED.camera_enabled,

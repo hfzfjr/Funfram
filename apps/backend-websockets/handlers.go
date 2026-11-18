@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
+
+var connClients sync.Map // *websocket.Conn -> *Client
 
 // Upgrader dideklarasikan di sini agar bisa diakses semua file dalam package main
 var upgrader = websocket.Upgrader{
@@ -117,13 +120,6 @@ func cleanupMatchForLobby(hub *Hub, lobbyID string) (string, string) {
 
 		delete(hub.matches, activeMatchID)
 
-		if ge := GetGameEngine(activeMatchID); ge != nil {
-			close(ge.stopChan)
-			enginesMu.Lock()
-			delete(engines, activeMatchID)
-			enginesMu.Unlock()
-		}
-
 		if currentLobby, exists := hub.lobbies[lobbyID]; exists {
 			currentLobby.Status = "WAITING"
 			currentLobby.LastMatchLobbyID = otherLobbyID
@@ -141,6 +137,15 @@ func cleanupMatchForLobby(hub *Hub, lobbyID string) (string, string) {
 		}
 	}
 	hub.mu.Unlock()
+
+	if activeMatchID != "" {
+		if ge := GetGameEngine(activeMatchID); ge != nil {
+			ge.Stop()
+			enginesMu.Lock()
+			delete(engines, activeMatchID)
+			enginesMu.Unlock()
+		}
+	}
 
 	if activeMatchID != "" && db != nil {
 		if err := EndMatchDB(activeMatchID); err != nil {
@@ -172,6 +177,8 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 		Presence:  "OFFLINE",
 		JoinOrder: 0,
 	}
+	connClients.Store(ws, client)
+	defer connClients.Delete(ws)
 
 	// Set up ping/pong for detecting offline ghost users
 	pongWait := 15 * time.Second
@@ -684,7 +691,7 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 
 			ge := GetGameEngine(payload.SessionID)
 			if ge != nil {
-				close(ge.stopChan)
+				ge.Stop()
 				enginesMu.Lock()
 				delete(engines, payload.SessionID)
 				enginesMu.Unlock()
@@ -858,6 +865,11 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 }
 
 func sendResponse(ws *websocket.Conn, data interface{}) error {
+	if val, ok := connClients.Load(ws); ok {
+		if client, ok := val.(*Client); ok {
+			return client.Send(data)
+		}
+	}
 	message, err := json.Marshal(data)
 	if err != nil {
 		return err

@@ -1,5 +1,64 @@
 import { NextResponse } from 'next/server';
 
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 menit
+const RATE_LIMIT_MAX_REQUESTS = 15; // Maks 15 request per menit per IP
+const ipRateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+function getClientIp(request: Request): string {
+    const forwardedFor = request.headers.get('x-forwarded-for');
+    if (forwardedFor) {
+        return forwardedFor.split(',')[0].trim();
+    }
+    return request.headers.get('x-real-ip') || 'unknown';
+}
+
+function isRateLimited(ip: string): boolean {
+    const now = Date.now();
+    const record = ipRateLimitMap.get(ip);
+
+    if (!record || now > record.resetAt) {
+        ipRateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+        return false;
+    }
+
+    if (record.count >= RATE_LIMIT_MAX_REQUESTS) {
+        return true;
+    }
+
+    record.count += 1;
+    return false;
+}
+
+function isAllowedCaller(request: Request): boolean {
+    // Tolak akses langsung dari address bar browser (top-level navigation)
+    const secFetchDest = request.headers.get('sec-fetch-dest');
+    const secFetchMode = request.headers.get('sec-fetch-mode');
+    if (secFetchDest === 'document' || secFetchMode === 'navigate') {
+        return false;
+    }
+
+    // Wajib berasal dari client Funfram
+    if (request.headers.get('x-funfram-client') !== '1') {
+        return false;
+    }
+
+    // Validasi Origin jika dikirim oleh browser
+    const origin = request.headers.get('origin');
+    if (origin) {
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+        const host = request.headers.get('host');
+        const isLocal = origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1');
+        const matchesAppUrl = appUrl ? origin === new URL(appUrl).origin : false;
+        const matchesHost = host ? origin === `https://${host}` || origin === `http://${host}` : false;
+
+        if (!isLocal && !matchesAppUrl && !matchesHost) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 async function fetchMeteredIceServers() {
     const meteredDomain = process.env.METERED_DOMAIN;
     const meteredApiKey = process.env.METERED_API_KEY;
@@ -24,6 +83,21 @@ async function fetchMeteredIceServers() {
 }
 
 export async function GET(request: Request) {
+    if (!isAllowedCaller(request)) {
+        return NextResponse.json(
+            { error: 'Forbidden' },
+            { status: 403, headers: { 'Cache-Control': 'no-store' } }
+        );
+    }
+
+    const clientIp = getClientIp(request);
+    if (isRateLimited(clientIp)) {
+        return NextResponse.json(
+            { error: 'Too many requests' },
+            { status: 429, headers: { 'Cache-Control': 'no-store' } }
+        );
+    }
+
     try {
         const turnKeyId = process.env.CLOUDFLARE_TURN_KEY_ID;
         const apiToken = process.env.CLOUDFLARE_TURN_API_TOKEN;
@@ -47,7 +121,7 @@ export async function GET(request: Request) {
 
                 if (response.ok) {
                     const data = await response.json();
-                    return NextResponse.json(data);
+                    return NextResponse.json(data, { headers: { 'Cache-Control': 'no-store' } });
                 }
 
                 const errorText = await response.text();
@@ -62,15 +136,18 @@ export async function GET(request: Request) {
         // Optional fallback to Metered TURN if configured
         const meteredData = await fetchMeteredIceServers();
         if (meteredData) {
-            return NextResponse.json(meteredData);
+            return NextResponse.json(meteredData, { headers: { 'Cache-Control': 'no-store' } });
         }
 
         return NextResponse.json(
-            { error: 'Failed to generate TURN credentials from Cloudflare or Metered' },
-            { status: 500 }
+            { error: 'TURN credentials unavailable' },
+            { status: 503, headers: { 'Cache-Control': 'no-store' } }
         );
     } catch (error) {
         console.error('Error in /api/turn-credentials:', error);
-        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+        return NextResponse.json(
+            { error: 'Internal Server Error' },
+            { status: 500, headers: { 'Cache-Control': 'no-store' } }
+        );
     }
 }

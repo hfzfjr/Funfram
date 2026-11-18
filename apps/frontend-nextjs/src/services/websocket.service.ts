@@ -36,7 +36,10 @@ class WebSocketServiceClass {
 
   /** Connect if not already connected or connecting. */
   connect(customUrl?: string) {
-    const targetUrl = customUrl ?? this.url;
+    if (customUrl) {
+      this.url = customUrl;
+    }
+    const targetUrl = this.url;
     // Guard against duplicate connections (CONNECTING or OPEN)
     if (this.ws && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)) {
       console.info('WebSocket already CONNECTING or OPEN – skipping new connect');
@@ -115,7 +118,7 @@ class WebSocketServiceClass {
 
   /** Send immediately when open, or wait for the current connection to open. */
   sendWhenOpen(event: string, payload: any) {
-    if (!this.ws) {
+    if (!this.ws || this.ws.readyState === WebSocket.CLOSING || this.ws.readyState === WebSocket.CLOSED) {
       this.connect();
     }
 
@@ -153,15 +156,18 @@ class WebSocketServiceClass {
   /** Setup network change listeners for early detection */
   setupNetworkListeners() {
     if (typeof window !== 'undefined') {
+      this.removeNetworkListeners();
+
       this.onlineHandler = () => {
+        if (!this.shouldReconnect) return;
         console.info('Network detected as online - attempting to reconnect');
+        this.clearReconnectTimer();
         this.reconnectAttempts = 0;
         this.connect();
       };
 
       this.offlineHandler = () => {
         console.warn('Network detected as offline');
-        // Optionally trigger UI updates via store
       };
 
       window.addEventListener('online', this.onlineHandler);

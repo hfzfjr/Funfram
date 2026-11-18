@@ -136,16 +136,19 @@ func NewHub() *Hub {
 }
 
 func (h *Hub) generateInviteCode() string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.generateInviteCodeLocked()
+}
+
+func (h *Hub) generateInviteCodeLocked() string {
 	const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	for {
 		code := ""
 		for i := 0; i < 8; i++ {
 			code += string(chars[rand.Intn(len(chars))])
 		}
-		h.mu.RLock()
-		_, exists := h.inviteCodes[code]
-		h.mu.RUnlock()
-		if !exists {
+		if _, exists := h.inviteCodes[code]; !exists {
 			return code
 		}
 	}
@@ -156,7 +159,7 @@ func (h *Hub) CreateLobby(ownerID, username string) *Lobby {
 	defer h.mu.Unlock()
 
 	lobbyID := fmt.Sprintf("lobby-%d", time.Now().UnixNano())
-	inviteCode := h.generateInviteCode()
+	inviteCode := h.generateInviteCodeLocked()
 
 	lobby := &Lobby{
 		ID:         lobbyID,
@@ -264,7 +267,7 @@ func (h *Hub) AddToMatchmaking(lobbyID string) {
 		member.Presence = "MATCHING"
 	}
 	
-	h.broadcastEventToLobby(lobbyID, "MATCHMAKING_STARTED", map[string]interface{}{})
+	h.broadcastEventToLobbyLocked(lobbyID, "MATCHMAKING_STARTED", map[string]interface{}{})
 
 	// Count valid alternatives (excluding self and optionally last-match)
 	validAlternatives := 0
@@ -294,7 +297,12 @@ func (h *Hub) AddToMatchmaking(lobbyID string) {
 		}
 	}
 
-	// No match found, add to queue
+	// No match found, add to queue if not already queued
+	for _, existing := range h.waitingQueue {
+		if existing.ID == lobbyID {
+			return
+		}
+	}
 	h.waitingQueue = append(h.waitingQueue, lobby)
 }
 
@@ -333,15 +341,33 @@ func (h *Hub) createMatch(lobbyA, lobbyB *Lobby) {
 
 	session := match.ToSession()
 
-	h.broadcastToLobby(lobbyA.ID, map[string]interface{}{
+	h.broadcastToLobbyLocked(lobbyA.ID, map[string]interface{}{
 		"event":   "MATCH_FOUND",
 		"payload": session,
 	})
 
-	h.broadcastToLobby(lobbyB.ID, map[string]interface{}{
+	h.broadcastToLobbyLocked(lobbyB.ID, map[string]interface{}{
 		"event":   "MATCH_FOUND",
 		"payload": session,
 	})
+}
+
+func (h *Hub) broadcastEventToLobbyLocked(lobbyID string, event string, payload interface{}) {
+	h.broadcastToLobbyLocked(lobbyID, map[string]interface{}{
+		"event":   event,
+		"payload": payload,
+	})
+}
+
+func (h *Hub) broadcastToLobbyLocked(lobbyID string, message interface{}) {
+	lobby, exists := h.lobbies[lobbyID]
+	if !exists {
+		return
+	}
+
+	for _, client := range lobby.Members {
+		_ = client.Send(message)
+	}
 }
 
 func (h *Hub) broadcastEventToLobby(lobbyID string, event string, payload interface{}) {
@@ -354,46 +380,62 @@ func (h *Hub) broadcastEventToLobby(lobbyID string, event string, payload interf
 func (h *Hub) broadcastEventToMatch(matchID string, event string, payload interface{}) {
 	h.mu.RLock()
 	match, exists := h.matches[matchID]
+	var lobbyAID, lobbyBID string
+	if exists {
+		lobbyAID = match.LobbyA.ID
+		lobbyBID = match.LobbyB.ID
+	}
 	h.mu.RUnlock()
 	if !exists {
 		return
 	}
-	h.broadcastEventToLobby(match.LobbyA.ID, event, payload)
-	h.broadcastEventToLobby(match.LobbyB.ID, event, payload)
+	h.broadcastEventToLobby(lobbyAID, event, payload)
+	h.broadcastEventToLobby(lobbyBID, event, payload)
 }
 
 func (h *Hub) broadcastToLobby(lobbyID string, message interface{}) {
+	h.mu.RLock()
 	lobby, exists := h.lobbies[lobbyID]
 	if !exists {
+		h.mu.RUnlock()
 		return
 	}
-
+	members := make([]*Client, 0, len(lobby.Members))
 	for _, client := range lobby.Members {
-		if client.Send(message) == nil {
-			// Message sent successfully
-		}
+		members = append(members, client)
+	}
+	h.mu.RUnlock()
+
+	for _, client := range members {
+		_ = client.Send(message)
 	}
 }
 
 func (h *Hub) HandleGameMessage(userID string, msg GameMessage) {
 	h.mu.RLock()
 	client, exists := h.clients[userID]
-	h.mu.RUnlock()
-
 	if !exists || client.LobbyID == "" {
+		h.mu.RUnlock()
 		return
 	}
 
 	lobby, exists := h.lobbies[client.LobbyID]
 	if !exists {
+		h.mu.RUnlock()
 		return
 	}
 
-	// Broadcast game message to all members in the lobby
-	msg.Sender = userID
+	members := make([]*Client, 0, len(lobby.Members))
 	for _, member := range lobby.Members {
 		if member.ID != userID {
-			member.Send(msg)
+			members = append(members, member)
 		}
+	}
+	h.mu.RUnlock()
+
+	// Broadcast game message to all other members in the lobby
+	msg.Sender = userID
+	for _, member := range members {
+		_ = member.Send(msg)
 	}
 }

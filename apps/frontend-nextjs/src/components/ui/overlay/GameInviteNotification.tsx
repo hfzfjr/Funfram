@@ -12,12 +12,10 @@ export default function GameInviteNotification() {
     if (!gameInvite) return null;
 
     const handleAccept = () => {
-        ws.sendEvent('GAME_ACCEPT', { sessionId: gameInvite.sessionId });
         acceptGameInvite();
     };
 
     const handleDecline = () => {
-        ws.sendEvent('GAME_DECLINE', { sessionId: gameInvite.sessionId });
         declineGameInvite();
     };
 
