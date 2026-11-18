@@ -396,6 +396,15 @@ export function useCallSignaling({
           .getState()
           .showCustomAlert('Tautan undangan sudah tidak valid karena pemilik telah keluar atau frame kadaluarsa.');
         onLeaveRef.current();
+      } else if (errorMsg === 'lobby is full' || errorMsg === 'lobby is not accepting new players') {
+        useCallStore.getState().showCustomAlert(
+          'Maaf, room frame ini sudah penuh (maksimal 2 orang). Klik Oke untuk masuk ke lobby Anda sendiri.',
+          'info',
+          {
+            confirmText: 'Oke',
+            onConfirm: () => onLeaveRef.current(),
+          }
+        );
       } else if (errorMsg === 'frame idle timeout') {
         useCallStore.getState().showCustomAlert('Frame ditutup karena sudah lebih dari 5 menit tidak ada aktivitas.');
         onLeaveRef.current();

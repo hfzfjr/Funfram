@@ -63,9 +63,15 @@ export default function CustomAlertModal() {
                 <p className="text-base text-slate-500 m-0 mb-8 leading-relaxed">{customAlert?.message}</p>
                 <button
                     className="bg-sky-500 hover:bg-sky-600 text-white border-none p-3 rounded-xl text-base font-bold cursor-pointer w-full transition-all duration-200 active:scale-95"
-                    onClick={hideCustomAlert}
+                    onClick={() => {
+                        const onConfirm = customAlert?.onConfirm;
+                        hideCustomAlert();
+                        if (onConfirm) {
+                            onConfirm();
+                        }
+                    }}
                 >
-                    Mengerti
+                    {customAlert?.confirmText || 'Mengerti'}
                 </button>
             </div>
         </div>

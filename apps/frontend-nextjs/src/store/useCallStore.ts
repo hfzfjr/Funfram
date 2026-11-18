@@ -63,7 +63,7 @@ export interface CallStore {
     leftParticipants: Participant[]; // Local Frame (Frame A)
     rightParticipants: Participant[]; // Remote Frame (Frame B)
 
-    customAlert: { message: string, visible: boolean, type: 'error' | 'success' | 'info' } | null;
+    customAlert: { message: string, visible: boolean, type: 'error' | 'success' | 'info', confirmText?: string, onConfirm?: () => void } | null;
 
     // Chats (Temporary, reset on leave)
     generalChat: ChatMessage[];
@@ -97,7 +97,7 @@ export interface CallStore {
     setSession: (session: Session | null) => void;
     handleOpponentLeft: (payload: { userId?: string; frameId?: string; sessionId?: string; reason?: string }) => void;
     triggerNextFrame: () => boolean; // returns true if action allowed (rate limited)
-    showCustomAlert: (message: string, type?: 'success' | 'error' | 'info') => void;
+    showCustomAlert: (message: string, type?: 'success' | 'error' | 'info', options?: { confirmText?: string; onConfirm?: () => void }) => void;
     hideCustomAlert: () => void;
     updateParticipantConnectionState: (id: string, connectionState: RTCIceConnectionState | 'reconnecting' | 'ice-restarting') => void;
     updateParticipantNetworkQuality: (id: string, quality: 'good' | 'medium' | 'poor') => void;
@@ -387,8 +387,8 @@ export const useCallStore = create<CallStore>((set, get) => ({
         return true;
     },
 
-    showCustomAlert: (message, type = 'error') => {
-        set({ customAlert: { message, visible: true, type } });
+    showCustomAlert: (message, type = 'error', options) => {
+        set({ customAlert: { message, visible: true, type, confirmText: options?.confirmText, onConfirm: options?.onConfirm } });
     },
 
     hideCustomAlert: () => {
