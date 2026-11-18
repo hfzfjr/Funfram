@@ -86,8 +86,8 @@ export default function Navigation({
 
   return (
     <>
-      <div className="fixed bottom-3 md:bottom-6 left-1/2 -translate-x-1/2 z-[1000] bg-white shadow-[0_4px_20px_rgba(0,0,0,0.05)] rounded-[34px] md:rounded-full px-4 py-2 md:px-6 md:py-3 h-[68px] md:h-auto border border-black/10 flex items-center box-border">
-        <div className="flex items-center gap-3">
+      <div className="fixed bottom-3 lg:bottom-6 left-1/2 -translate-x-1/2 z-[1000] w-[calc(100vw-32px)] max-w-[360px] lg:w-auto lg:max-w-none bg-white shadow-[0_4px_20px_rgba(0,0,0,0.08)] rounded-full px-3 py-2 lg:px-6 lg:py-3 border border-black/10 flex items-center box-border">
+        <div className="flex items-center justify-between lg:justify-start w-full lg:w-auto gap-1 sm:gap-2 lg:gap-3">
           {/* Start/Next Frame Button - Always available for owner in FRAME, SEARCHING, MATCHED */}
           {isOwner && (fsmState === 'FRAME' || fsmState === 'SEARCHING' || fsmState === 'MATCHED') && (
             <NextFrameButton
@@ -115,17 +115,17 @@ export default function Navigation({
 
           <LeaveFrameButton onClick={onLeave} />
 
-          <div className="w-px h-8 bg-black/10 rounded-sm mx-1"></div>
+          <div className="w-px h-6 lg:h-8 bg-black/10 rounded-sm mx-0.5 lg:mx-1"></div>
 
           <MicrophoneButton onClick={onMic} isOn={isMicOn} />
 
-          <div className="w-px h-8 bg-black/10 rounded-sm mx-1"></div>
+          <div className="w-px h-6 lg:h-8 bg-black/10 rounded-sm mx-0.5 lg:mx-1"></div>
 
           <ChatButton onClick={handleChatClick} hasUnread={hasUnreadChat} />
 
           {isOwner && fsmState === 'FRAME' && (
             <>
-              <div className="w-px h-8 bg-black/10 rounded-sm mx-1"></div>
+              <div className="w-px h-6 lg:h-8 bg-black/10 rounded-sm mx-0.5 lg:mx-1"></div>
               <InviteFriendsButton onClick={() => setShowInviteOverlay(true)} />
             </>
           )}

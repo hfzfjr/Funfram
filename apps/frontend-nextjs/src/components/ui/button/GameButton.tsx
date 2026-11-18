@@ -10,7 +10,7 @@ export default function GameButton({ onClick, disabled = false }: GameButtonProp
         <button
             onClick={onClick}
             disabled={disabled}
-            className={`flex items-center justify-center gap-2 p-0 md:px-6 md:py-3 w-[52px] h-[52px] md:w-auto md:h-12 border-none rounded-full text-sm font-semibold transition-all duration-200 whitespace-nowrap active:enabled:scale-95 ${
+            className={`flex items-center justify-center gap-2 p-0 lg:px-5 lg:py-3 w-11 h-11 lg:w-auto lg:h-12 border-none rounded-full text-sm font-semibold transition-all duration-200 whitespace-nowrap active:enabled:scale-95 ${
                 disabled
                     ? 'bg-[#1b1d28] text-gray-600 opacity-50 cursor-not-allowed'
                     : 'bg-gradient-to-r from-pink-500 to-violet-500 hover:from-pink-600 hover:to-violet-600 text-white cursor-pointer'
@@ -24,7 +24,7 @@ export default function GameButton({ onClick, disabled = false }: GameButtonProp
                 <line x1="18" y1="11" x2="18.01" y2="11" />
                 <rect x="2" y="6" width="20" height="12" rx="3" />
             </svg>
-            <span className="hidden md:inline">Play Game</span>
+            <span className="hidden lg:inline">Play Game</span>
         </button>
     );
 }
