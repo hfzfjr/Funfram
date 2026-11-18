@@ -7,10 +7,21 @@ const ParticipantAudio = ({ participant }: { participant: any }) => {
     const audioRef = useRef<HTMLAudioElement>(null);
 
     useEffect(() => {
-        if (audioRef.current && participant.stream) {
-            audioRef.current.srcObject = participant.stream;
+        const audioEl = audioRef.current;
+        if (!audioEl) return;
+
+        audioEl.muted = Boolean(participant.isMuted);
+        if (participant.stream) {
+            if (audioEl.srcObject !== participant.stream) {
+                audioEl.srcObject = participant.stream;
+            }
+            audioEl.play().catch(() => {
+                // Autoplay policy may block hidden audio until user interaction; VideoTile handles unlock UI
+            });
+        } else {
+            audioEl.srcObject = null;
         }
-    }, [participant.stream]);
+    }, [participant.stream, participant.isMuted]);
 
     return <audio ref={audioRef} autoPlay playsInline style={{ display: 'none' }} />;
 };

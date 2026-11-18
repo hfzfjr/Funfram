@@ -19,41 +19,53 @@ export default function VideoTile({ participant }: VideoTileProps) {
             if (videoRef.current.muted !== shouldBeMuted) {
                 videoRef.current.muted = shouldBeMuted;
             }
+            if (!shouldBeMuted && videoRef.current.paused && participant.stream) {
+                videoRef.current.play().catch(() => {});
+            }
         }
-    }, [participant.isMuted, isLocalVideo, isAutoplayBlocked]);
+    }, [participant.isMuted, isLocalVideo, isAutoplayBlocked, participant.stream]);
 
     useEffect(() => {
-        if (videoRef.current && participant.stream) {
-            const videoEl = videoRef.current;
-            // Force re-attach for iOS Safari audio bug when tracks are updated
-            if (videoEl.srcObject !== participant.stream) {
-                videoEl.srcObject = null;
-                videoEl.srcObject = participant.stream;
-            }
-            
-            const attemptPlay = () => {
-                const playPromise = videoEl.play();
-                if (playPromise !== undefined) {
-                    playPromise.then(() => {
-                        console.log(`[VideoTile] Autoplay succeeded for ${participant.id}. Tracks:`, participant.stream?.getTracks().length);
-                        // If it played successfully but it's supposed to be unmuted, ensure it's not silently muted by the browser
-                        if (!isLocalVideo && !participant.isMuted && !isAutoplayBlocked) {
-                            videoEl.muted = false;
-                        }
-                    }).catch((error) => {
-                        console.warn('[VideoTile] Autoplay failed:', error.name, error.message);
-                        if (!isLocalVideo && error.name === 'NotAllowedError') {
-                            console.log('[VideoTile] Falling back to muted autoplay to ensure video frames render.');
-                            setIsAutoplayBlocked(true);
-                            videoEl.muted = true;
-                            videoEl.play().catch(e => console.error('[VideoTile] Muted fallback also failed:', e));
-                        }
-                    });
-                }
-            };
-            
-            attemptPlay();
+        const videoEl = videoRef.current;
+        if (!videoEl) return;
+
+        if (!participant.stream) {
+            videoEl.srcObject = null;
+            return;
         }
+
+        // Force re-attach for iOS Safari audio bug when tracks are updated
+        if (videoEl.srcObject !== participant.stream) {
+            videoEl.srcObject = null;
+            videoEl.srcObject = participant.stream;
+        }
+
+        const attemptPlay = () => {
+            const playPromise = videoEl.play();
+            if (playPromise !== undefined) {
+                playPromise.then(() => {
+                    console.log(`[VideoTile] Autoplay succeeded for ${participant.id}. Tracks:`, participant.stream?.getTracks().length);
+                    const state = useCallStore.getState();
+                    const latestParticipant =
+                        state.leftParticipants.find(p => p.id === participant.id) ||
+                        state.rightParticipants.find(p => p.id === participant.id);
+                    const isCurrentlyMuted = latestParticipant ? latestParticipant.isMuted : participant.isMuted;
+                    if (!isLocalVideo && !isCurrentlyMuted && !isAutoplayBlocked) {
+                        videoEl.muted = false;
+                    }
+                }).catch((error) => {
+                    console.warn('[VideoTile] Autoplay failed:', error.name, error.message);
+                    if (!isLocalVideo && error.name === 'NotAllowedError') {
+                        console.log('[VideoTile] Falling back to muted autoplay to ensure video frames render.');
+                        setIsAutoplayBlocked(true);
+                        videoEl.muted = true;
+                        videoEl.play().catch(e => console.error('[VideoTile] Muted fallback also failed:', e));
+                    }
+                });
+            }
+        };
+
+        attemptPlay();
     }, [participant.stream, isLocalVideo, participant.id]);
 
     const handleUnmute = () => {

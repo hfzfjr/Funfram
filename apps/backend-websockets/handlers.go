@@ -598,18 +598,30 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 					}
 				}
 			}
+			var activeMatchID string
+			for mID, match := range hub.matches {
+				if match.LobbyA.ID == client.LobbyID || match.LobbyB.ID == client.LobbyID {
+					activeMatchID = mID
+					break
+				}
+			}
 			hub.mu.Unlock()
 
 			if db != nil && payload.UserID != "" {
 				_ = UpsertUserDeviceState(payload.UserID, payload.SessionID, payload.CameraEnabled, payload.MicrophoneEnabled)
 			}
 
-			hub.broadcastEventToLobby(client.LobbyID, "DEVICE_STATE_CHANGE", map[string]interface{}{
+			devicePayload := map[string]interface{}{
 				"userId":            payload.UserID,
 				"sessionId":         payload.SessionID,
 				"cameraEnabled":     payload.CameraEnabled,
 				"microphoneEnabled": payload.MicrophoneEnabled,
-			})
+			}
+			if activeMatchID != "" {
+				hub.broadcastEventToMatch(activeMatchID, "DEVICE_STATE_CHANGE", devicePayload)
+			} else {
+				hub.broadcastEventToLobby(client.LobbyID, "DEVICE_STATE_CHANGE", devicePayload)
+			}
 
 		case "GAME_INVITE":
 			if !client.IsLobbyOwner {
