@@ -66,26 +66,31 @@ export function useCallSignaling({
       }
     }, 100);
 
+    // Prefetch TURN credentials and warm up WebRTC signaling socket early
+    const webrtcUrl = process.env.NEXT_PUBLIC_WS_WEBRTC_URL || 'ws://localhost:5002';
+    void WebRtcService.getInstance().fetchCloudflareIceServers();
+    void WebRtcService.getInstance().connectToSignalingServer(webrtcUrl).catch(() => {});
+
     let playerJoinAlertTimeout: ReturnType<typeof setTimeout> | null = null;
     let webrtcConnectGeneration = 0;
 
     const connectWebRTC = async (roomId: string) => {
       const currentGeneration = ++webrtcConnectGeneration;
       const webrtc = WebRtcService.getInstance();
-      const webrtcUrl = process.env.NEXT_PUBLIC_WS_WEBRTC_URL || 'ws://localhost:5002';
       const store = useCallStore.getState();
 
-      // Fetch Cloudflare TURN credentials before connecting
-      await webrtc.fetchCloudflareIceServers();
+      // Use cached ICE servers when available; only await if not yet fetched
+      if (!webrtc.hasCachedIceServers()) {
+        await webrtc.fetchCloudflareIceServers();
+      }
 
       // Abort if a newer connectWebRTC call started while fetching ICE servers
       if (currentGeneration !== webrtcConnectGeneration) {
         return;
       }
 
-      // Putuskan koneksi lama terlebih dahulu agar tidak ada koneksi duplikat
-      // (contoh: koneksi lobi masih aktif saat MATCH_FOUND tiba)
-      webrtc.disconnectAll();
+      // Putuskan peer connection lama tanpa menutup WebSocket signaling agar reconnect instan
+      webrtc.leaveCurrentRoom();
 
       webrtc.setLocalStream(localStreamRef.current);
       webrtc.onRemoteStream((participantId, stream) => {

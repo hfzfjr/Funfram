@@ -96,4 +96,8 @@ a:focus-visible {
   80% { transform: translate(5%, -5%); }
   100% { transform: translate(0, 0); }
 }
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
 

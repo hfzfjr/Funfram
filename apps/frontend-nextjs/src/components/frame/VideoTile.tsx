@@ -183,19 +183,33 @@ export default function VideoTile({ participant }: VideoTileProps) {
                     }`}
                 />
             ) : (
-                <div className={`w-full h-full flex flex-col items-center justify-center gap-3 bg-gradient-to-br from-slate-100 via-sky-50 to-indigo-100 ${isLocalVideo ? 'rounded-[2px]' : ''}`}>
+                <div className={`relative w-full h-full flex flex-col items-center justify-center gap-4 overflow-hidden bg-gradient-to-br from-slate-100 via-sky-50 to-indigo-100 ${isLocalVideo ? 'rounded-[2px]' : ''}`}>
+                    {showLoading && (
+                        <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/55 to-transparent animate-[shimmer_1.8s_infinite] pointer-events-none" />
+                    )}
                     <div className="relative flex items-center justify-center">
                         {showLoading && (
-                            <span className="absolute -inset-2 rounded-full border-2 border-sky-400/50 animate-ping" />
+                            <>
+                                <span className="absolute -inset-4 rounded-full bg-sky-400/20 animate-ping" />
+                                <span className="absolute -inset-2 rounded-full bg-gradient-to-tr from-[#00C6FF]/40 via-blue-500/40 to-purple-500/40 blur-sm animate-pulse" />
+                            </>
                         )}
-                        <div className="w-16 h-16 rounded-full bg-white/90 border border-slate-200 shadow-sm flex items-center justify-center">
-                            <span className="text-xl font-bold text-slate-800">{getInitials(participant.name)}</span>
+                        <div className="relative w-20 h-20 rounded-full p-[3px] bg-gradient-to-br from-[#00C6FF] via-blue-500 to-purple-500 shadow-md">
+                            <div className="w-full h-full rounded-full bg-white flex items-center justify-center">
+                                <span className="text-2xl font-extrabold bg-gradient-to-br from-slate-800 to-slate-600 bg-clip-text text-transparent">
+                                    {getInitials(participant.name)}
+                                </span>
+                            </div>
                         </div>
                     </div>
                     {showLoading && (
-                        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/85 border border-slate-200/80 shadow-xs text-xs font-medium text-slate-600">
-                            <span className="w-2 h-2 rounded-full bg-sky-500 animate-pulse" />
-                            <span>{loadingText}</span>
+                        <div className="relative flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/90 backdrop-blur-md border border-slate-200/90 shadow-sm text-xs font-semibold text-slate-700">
+                            <span className="flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-bounce [animation-delay:-0.3s]" />
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-bounce [animation-delay:-0.15s]" />
+                                <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-bounce" />
+                            </span>
+                            <span>{loadingText === 'Menghubungkan...' ? 'Menghubungkan kamera...' : loadingText}</span>
                         </div>
                     )}
                 </div>

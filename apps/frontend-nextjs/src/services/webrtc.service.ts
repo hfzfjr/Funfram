@@ -27,50 +27,72 @@ export class WebRtcService {
     private iceRestarts: Map<string, number> = new Map();
     private statsPollingIntervals: Map<string, ReturnType<typeof setInterval>> = new Map();
     private wasConnected: Map<string, boolean> = new Map();
+    private iceServersFetchedAt = 0;
+    private iceFetchPromise: Promise<void> | null = null;
+    private signalingUrl: string | null = null;
+    private signalingConnectPromise: Promise<void> | null = null;
 
     private constructor() { }
 
-    public async fetchCloudflareIceServers(): Promise<void> {
-        try {
-            const res = await fetch('/api/turn-credentials', {
-                headers: {
-                    'X-Funfram-Client': '1',
-                },
-            });
-            if (!res.ok) {
-                console.warn('[WebRtcService] Failed to fetch TURN credentials, falling back to default STUN', await res.text());
-                return;
-            }
-            const data = await res.json();
-                        if (data.iceServers) {
-                // Handle both Array (Metered/Twilio) and Object (Cloudflare) responses
-                const serversArray = Array.isArray(data.iceServers) ? data.iceServers : [data.iceServers];
-                
-                // Filter out port 53 (as recommended for Cloudflare TURN)
-                const filteredServers = serversArray.map((server: any) => {
-                    if (server.urls) {
-                        const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
-                        server.urls = urls.filter((url: string) => !url.includes(':53?'));
-                    }
-                    return server;
-                });
-                this.iceServers = [...DEFAULT_ICE_SERVERS, ...filteredServers];
-                this.iceServersReady = true;
-                console.log('[WebRtcService] Fetched Cloudflare ICE Servers:', this.iceServers);
-                
-                // Update existing connections if any
-                this.peerConnections.forEach((pc, id) => {
-                    try {
-                        pc.setConfiguration({ iceServers: this.iceServers });
-                        console.log(`[WebRtcService] Updated ICE servers on existing PC for: ${id}`);
-                    } catch (e) {
-                        console.warn('[WebRtcService] Error updating ice servers:', e);
-                    }
-                });
-            }
-        } catch (e) {
-            console.error('[WebRtcService] Error fetching Cloudflare ICE servers:', e);
+    public hasCachedIceServers(): boolean {
+        return this.iceServersReady && Date.now() - this.iceServersFetchedAt < 15 * 60 * 1000;
+    }
+
+    public async fetchCloudflareIceServers(force = false): Promise<void> {
+        if (!force && this.hasCachedIceServers()) {
+            return;
         }
+        if (this.iceFetchPromise) {
+            return this.iceFetchPromise;
+        }
+
+        this.iceFetchPromise = (async () => {
+            try {
+                const res = await fetch('/api/turn-credentials', {
+                    headers: {
+                        'X-Funfram-Client': '1',
+                    },
+                });
+                if (!res.ok) {
+                    console.warn('[WebRtcService] Failed to fetch TURN credentials, falling back to default STUN', await res.text());
+                    return;
+                }
+                const data = await res.json();
+                if (data.iceServers) {
+                    // Handle both Array (Metered/Twilio) and Object (Cloudflare) responses
+                    const serversArray = Array.isArray(data.iceServers) ? data.iceServers : [data.iceServers];
+
+                    // Filter out port 53 (as recommended for Cloudflare TURN)
+                    const filteredServers = serversArray.map((server: any) => {
+                        if (server.urls) {
+                            const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+                            server.urls = urls.filter((url: string) => !url.includes(':53?'));
+                        }
+                        return server;
+                    });
+                    this.iceServers = [...DEFAULT_ICE_SERVERS, ...filteredServers];
+                    this.iceServersReady = true;
+                    this.iceServersFetchedAt = Date.now();
+                    console.log('[WebRtcService] Fetched Cloudflare ICE Servers:', this.iceServers);
+
+                    // Update existing connections if any
+                    this.peerConnections.forEach((pc, id) => {
+                        try {
+                            pc.setConfiguration({ iceServers: this.iceServers });
+                            console.log(`[WebRtcService] Updated ICE servers on existing PC for: ${id}`);
+                        } catch (e) {
+                            console.warn('[WebRtcService] Error updating ice servers:', e);
+                        }
+                    });
+                }
+            } catch (e) {
+                console.error('[WebRtcService] Error fetching Cloudflare ICE servers:', e);
+            } finally {
+                this.iceFetchPromise = null;
+            }
+        })();
+
+        return this.iceFetchPromise;
     }
 
     private classifyNetworkQuality(packetLoss: number, rtt: number): 'good' | 'medium' | 'poor' {
@@ -200,7 +222,15 @@ export class WebRtcService {
     }
 
     public connectToSignalingServer(url: string): Promise<void> {
-        return new Promise((resolve, reject) => {
+        if (this.signalingSocket && this.signalingSocket.readyState === WebSocket.OPEN && this.signalingUrl === url) {
+            return Promise.resolve();
+        }
+        if (this.signalingSocket && this.signalingSocket.readyState === WebSocket.CONNECTING && this.signalingUrl === url && this.signalingConnectPromise) {
+            return this.signalingConnectPromise;
+        }
+
+        this.signalingUrl = url;
+        this.signalingConnectPromise = new Promise((resolve, reject) => {
             try {
                 if (this.signalingSocket) {
                     this.signalingSocket.onopen = null;
@@ -215,11 +245,13 @@ export class WebRtcService {
 
                 this.signalingSocket.onopen = () => {
                     console.log('[WebRtcService] Connected to signaling server');
+                    this.signalingConnectPromise = null;
                     resolve();
                 };
 
                 this.signalingSocket.onerror = (error) => {
                     console.error('[WebRtcService] Signaling socket error:', error);
+                    this.signalingConnectPromise = null;
                     reject(error);
                 };
 
@@ -233,11 +265,15 @@ export class WebRtcService {
 
                 this.signalingSocket.onclose = () => {
                     console.log('[WebRtcService] Signaling socket closed');
+                    this.signalingConnectPromise = null;
                 };
             } catch (error) {
+                this.signalingConnectPromise = null;
                 reject(error);
             }
         });
+
+        return this.signalingConnectPromise;
     }
 
     public joinRoom(roomId: string, userId: string) {
@@ -673,7 +709,7 @@ export class WebRtcService {
         }
     }
 
-    public disconnectAll(): void {
+    public leaveCurrentRoom(): void {
         const timestamp = new Date().toISOString();
         if (this.currentRoomId) {
             this.sendSignalingMessage({ type: 'leave' });
@@ -695,14 +731,16 @@ export class WebRtcService {
         this.statsPollingIntervals.clear();
         this.wasConnected.clear();
         this.currentRoomId = null;
-        // Do NOT reset iceServers to ensure TURN configuration persists across matches
-        // this.iceServers = [...DEFAULT_ICE_SERVERS];
-        // this.iceServersReady = true;
         this.pendingUserJoins = [];
+    }
+
+    public disconnectAll(): void {
+        this.leaveCurrentRoom();
 
         if (this.signalingSocket) {
             this.signalingSocket.close();
             this.signalingSocket = null;
+            this.signalingConnectPromise = null;
         }
     }
 }
