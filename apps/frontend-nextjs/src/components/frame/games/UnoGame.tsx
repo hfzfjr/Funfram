@@ -8,19 +8,18 @@ type CardColor = 'red' | 'blue' | 'green' | 'yellow' | 'wild';
 interface UnoCard {
   id: string;
   color: CardColor;
-  value: string; // '0'-'9', 'Skip', 'Reverse', '+2', 'Wild', 'Wild+4'
+  value: string;
 }
 
-interface UnoSyncState {
-  deck: UnoCard[];
-  discard: UnoCard[];
-  hands: Record<string, UnoCard[]>;
-  playerOrder: string[];
-  turnIndex: number;
+interface UnoFilteredState {
+  myHand: UnoCard[];
+  players: Array<{ id: string; handCount: number }>;
+  topCard: UnoCard;
+  currentColor: Exclude<CardColor, 'wild'>;
+  currentPlayerId: string;
   direction: 1 | -1;
-  activeColor: Exclude<CardColor, 'wild'>;
-  winnerId: string | null;
-  lastAction: string;
+  winner: string | null;
+  deckCount: number;
 }
 
 const COLOR_CLASS: Record<CardColor, string> = {
@@ -31,54 +30,21 @@ const COLOR_CLASS: Record<CardColor, string> = {
   wild: 'bg-slate-800',
 };
 
-function createDeck(): UnoCard[] {
-  const colors: Exclude<CardColor, 'wild'>[] = ['red', 'blue', 'green', 'yellow'];
-  const values = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'Skip', 'Reverse', '+2'];
-  const deck: UnoCard[] = [];
-  let idx = 0;
-
-  for (const color of colors) {
-    for (const value of values) {
-      deck.push({ id: `c-${idx++}`, color, value });
-      if (value !== '0') {
-        deck.push({ id: `c-${idx++}`, color, value });
-      }
-    }
+function formatCardLabel(value: string): string {
+  switch (value) {
+    case 'skip':
+      return 'Skip';
+    case 'reverse':
+      return 'Reverse';
+    case 'draw2':
+      return '+2';
+    case 'wild':
+      return 'Wild';
+    case 'wild4':
+      return 'Wild+4';
+    default:
+      return value;
   }
-  for (let i = 0; i < 4; i++) {
-    deck.push({ id: `c-${idx++}`, color: 'wild', value: 'Wild' });
-    deck.push({ id: `c-${idx++}`, color: 'wild', value: 'Wild+4' });
-  }
-
-  for (let i = deck.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [deck[i], deck[j]] = [deck[j], deck[i]];
-  }
-  return deck;
-}
-
-function initUnoGame(playerIds: string[]): UnoSyncState {
-  const deck = createDeck();
-  const hands: Record<string, UnoCard[]> = {};
-  for (const id of playerIds) {
-    hands[id] = deck.splice(0, 7);
-  }
-  let top = deck.pop()!;
-  while (top.color === 'wild') {
-    deck.unshift(top);
-    top = deck.pop()!;
-  }
-  return {
-    deck,
-    discard: [top],
-    hands,
-    playerOrder: playerIds,
-    turnIndex: 0,
-    direction: 1,
-    activeColor: top.color as Exclude<CardColor, 'wild'>,
-    winnerId: null,
-    lastAction: 'Permainan UNO dimulai!',
-  };
 }
 
 export default function UnoGame() {
@@ -92,29 +58,13 @@ export default function UnoGame() {
     [leftParticipants, rightParticipants]
   );
 
-  const [game, setGame] = useState<UnoSyncState | null>(null);
+  const [game, setGame] = useState<UnoFilteredState | null>(null);
   const [pendingWildCard, setPendingWildCard] = useState<UnoCard | null>(null);
 
   const playerNames = useMemo(
     () => Object.fromEntries(allPlayers.map((p) => [p.id, p.name])),
     [allPlayers]
   );
-
-  // Host (first left participant) deals initial cards
-  useEffect(() => {
-    if (!sessionId || allPlayers.length < 2) return;
-    const isHost = leftParticipants[0]?.id === localUser?.id;
-    if (isHost && !game) {
-      const initial = initUnoGame(allPlayers.map((p) => p.id));
-      setGame(initial);
-      WebSocketService.getInstance().sendEvent('GAME_ACTION', {
-        game: 'uno',
-        action: 'SYNC',
-        sessionId,
-        state: initial,
-      });
-    }
-  }, [sessionId, allPlayers, leftParticipants, localUser?.id, game]);
 
   useEffect(() => {
     const ws = WebSocketService.getInstance();
@@ -129,37 +79,23 @@ export default function UnoGame() {
     return () => ws.off('GAME_ACTION', handleAction);
   }, []);
 
-  const syncState = (next: UnoSyncState) => {
-    setGame(next);
-    WebSocketService.getInstance().sendEvent('GAME_ACTION', {
-      game: 'uno',
-      action: 'SYNC',
-      sessionId,
-      state: next,
-    });
-  };
-
   const handleStopGame = () => {
     if (!sessionId) return;
     WebSocketService.getInstance().sendEvent('GAME_STOP', { sessionId });
   };
 
   if (!game || !localUser) {
-    return <div className="p-8 text-center font-semibold">Menyiapkan kartu UNO...</div>;
+    return <div className="p-8 text-center font-semibold text-slate-700">Menyiapkan kartu UNO...</div>;
   }
 
-  const currentTurnId = game.playerOrder[game.turnIndex];
-  const isMyTurn = currentTurnId === localUser.id && !game.winnerId;
-  const myHand = game.hands[localUser.id] || [];
-  const topCard = game.discard[game.discard.length - 1];
+  const isMyTurn = game.currentPlayerId === localUser.id && !game.winner;
+  const myHand = game.myHand || [];
+  const topCard = game.topCard;
 
   const canPlayCard = (card: UnoCard) => {
     if (card.color === 'wild') return true;
-    return card.color === game.activeColor || card.value === topCard.value;
+    return card.color === game.currentColor || card.value === topCard.value;
   };
-
-  const nextIndex = (from: number, step: number, dir: 1 | -1, len: number) =>
-    (((from + step * dir) % len) + len) % len;
 
   const playCard = (card: UnoCard, chosenColor?: Exclude<CardColor, 'wild'>) => {
     if (!isMyTurn || !canPlayCard(card)) return;
@@ -168,120 +104,69 @@ export default function UnoGame() {
       return;
     }
 
-    const nextHands = { ...game.hands };
-    nextHands[localUser.id] = myHand.filter((c) => c.id !== card.id);
-    const nextDeck = [...game.deck];
-    const nextDiscard = [...game.discard, card];
-
-    let nextDir = game.direction;
-    let step = 1;
-    const len = game.playerOrder.length;
-
-    if (card.value === 'Reverse') {
-      if (len === 2) {
-        step = 2; // In 2-player UNO, Reverse acts like Skip
-      } else {
-        nextDir = (nextDir * -1) as 1 | -1;
-      }
-    } else if (card.value === 'Skip') {
-      step = 2;
-    }
-
-    const nextColor = chosenColor || (card.color as Exclude<CardColor, 'wild'>);
-    const winnerId = nextHands[localUser.id].length === 0 ? localUser.id : null;
-
-    if (!winnerId && (card.value === '+2' || card.value === 'Wild+4')) {
-      const targetIdx = nextIndex(game.turnIndex, 1, nextDir, len);
-      const targetId = game.playerOrder[targetIdx];
-      const drawCount = card.value === '+2' ? 2 : 4;
-      const drawn: UnoCard[] = [];
-      for (let i = 0; i < drawCount; i++) {
-        if (nextDeck.length === 0 && nextDiscard.length > 1) {
-          const recycled = nextDiscard.splice(0, nextDiscard.length - 1);
-          nextDeck.push(...recycled);
-        }
-        const popped = nextDeck.pop();
-        if (popped) drawn.push(popped);
-      }
-      nextHands[targetId] = [...(nextHands[targetId] || []), ...drawn];
-      step = 2;
-    }
-
-    syncState({
-      deck: nextDeck,
-      discard: nextDiscard,
-      hands: nextHands,
-      playerOrder: game.playerOrder,
-      turnIndex: nextIndex(game.turnIndex, step, nextDir, len),
-      direction: nextDir,
-      activeColor: nextColor,
-      winnerId,
-      lastAction: `${localUser.name} memainkan ${card.color === 'wild' ? '' : card.color.toUpperCase() + ' '}${card.value}`,
+    WebSocketService.getInstance().sendEvent('GAME_ACTION', {
+      game: 'uno',
+      action: 'PLAY_CARD',
+      sessionId,
+      cardId: card.id,
+      ...(chosenColor ? { chosenColor } : {}),
     });
     setPendingWildCard(null);
   };
 
   const handleDrawCard = () => {
     if (!isMyTurn) return;
-    const nextDeck = [...game.deck];
-    const nextDiscard = [...game.discard];
-    if (nextDeck.length === 0 && nextDiscard.length > 1) {
-      nextDeck.push(...nextDiscard.splice(0, nextDiscard.length - 1));
-    }
-    const drawn = nextDeck.pop();
-    const nextHands = { ...game.hands };
-    if (drawn) {
-      nextHands[localUser.id] = [...myHand, drawn];
-    }
-
-    syncState({
-      ...game,
-      deck: nextDeck,
-      discard: nextDiscard,
-      hands: nextHands,
-      turnIndex: nextIndex(game.turnIndex, 1, game.direction, game.playerOrder.length),
-      lastAction: `${localUser.name} mengambil 1 kartu`,
+    WebSocketService.getInstance().sendEvent('GAME_ACTION', {
+      game: 'uno',
+      action: 'DRAW_CARD',
+      sessionId,
     });
   };
 
   const handleRestart = () => {
-    syncState(initUnoGame(allPlayers.map((p) => p.id)));
+    WebSocketService.getInstance().sendEvent('GAME_ACTION', {
+      game: 'uno',
+      action: 'RESET',
+      sessionId,
+    });
   };
 
   return (
     <div className="flex flex-col flex-1 p-3.5 gap-3 overflow-y-auto">
       <div className="flex flex-wrap justify-between items-center gap-2">
         <div>
-          <h2 className="m-0 text-[1.15rem] font-extrabold text-slate-900">🃏 UNO Card Game</h2>
+          <h2 className="m-0 text-[1.15rem] font-extrabold text-slate-900">🃏 Kartu UNO</h2>
           <div className="text-[0.82rem] text-slate-600">
-            {game.winnerId
-              ? `🎉 Pemenang: ${playerNames[game.winnerId] || 'Player'}!`
-              : `Giliran: ${playerNames[currentTurnId] || 'Player'} ${isMyTurn ? '(Giliran Anda!)' : ''}`}
+            {game.winner
+              ? `🎉 Pemenang: ${playerNames[game.winner] || 'Pemain'}!`
+              : `Giliran: ${playerNames[game.currentPlayerId] || 'Pemain'} ${isMyTurn ? '(Giliran Kamu!)' : ''}`}
           </div>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleRestart}
-            className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold cursor-pointer text-slate-900 hover:bg-slate-50 transition-colors"
-          >
-            Main Lagi
-          </button>
-          <button
-            onClick={handleStopGame}
-            className="px-3 py-1.5 rounded-lg border-none bg-red-600 hover:bg-red-700 text-white font-semibold cursor-pointer transition-colors"
-          >
-            Stop Game
-          </button>
-        </div>
+        {localUser.isOwner && (
+          <div className="flex gap-2">
+            <button
+              onClick={handleRestart}
+              className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold cursor-pointer text-slate-900 hover:bg-slate-50 transition-colors"
+            >
+              Main Lagi
+            </button>
+            <button
+              onClick={handleStopGame}
+              className="px-3 py-1.5 rounded-lg border-none bg-red-600 hover:bg-red-700 text-white font-semibold cursor-pointer transition-colors"
+            >
+              Stop Game
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Opponent card counts */}
+      {/* Opponent card counts (strictly no opponent card values exposed) */}
       <div className="flex gap-2 flex-wrap">
-        {game.playerOrder
-          .filter((id) => id !== localUser.id)
-          .map((id) => (
-            <div key={id} className="px-3 py-1.5 rounded-[10px] bg-white border border-slate-300 text-[0.82rem] font-semibold">
-              {playerNames[id] || 'Player'}: {(game.hands[id] || []).length} kartu
+        {game.players
+          .filter((p) => p.id !== localUser.id)
+          .map((p) => (
+            <div key={p.id} className="px-3 py-1.5 rounded-[10px] bg-white border border-slate-300 text-[0.82rem] font-semibold">
+              {playerNames[p.id] || 'Pemain'}: {p.handCount} kartu
             </div>
           ))}
       </div>
@@ -292,25 +177,22 @@ export default function UnoGame() {
           type="button"
           disabled={!isMyTurn}
           onClick={handleDrawCard}
-          className={`w-[76px] h-[110px] rounded-xl border-[3px] border-white bg-slate-900 text-white font-extrabold ${
+          className={`w-[76px] h-[110px] rounded-xl border-[3px] border-white bg-slate-900 text-white font-extrabold flex flex-col items-center justify-center ${
             isMyTurn ? 'cursor-pointer opacity-100' : 'cursor-not-allowed opacity-60'
           }`}
         >
-          AMBIL
+          <span>AMBIL</span>
+          <span className="text-[0.65rem] text-slate-300 mt-1">{game.deckCount}</span>
         </button>
 
         <div
           className={`w-[82px] h-[114px] rounded-xl border-[3px] border-white ${COLOR_CLASS[topCard.color]} text-white flex flex-col items-center justify-center font-extrabold text-[1.15rem] shadow-[0_8px_18px_rgba(0,0,0,0.18)]`}
         >
-          <span>{topCard.value}</span>
+          <span>{formatCardLabel(topCard.value)}</span>
           <span className="text-[0.68rem] mt-1 uppercase">
-            {game.activeColor}
+            {game.currentColor}
           </span>
         </div>
-      </div>
-
-      <div className="text-center text-[0.82rem] text-slate-700 font-semibold">
-        {game.lastAction}
       </div>
 
       {pendingWildCard && (
@@ -342,7 +224,7 @@ export default function UnoGame() {
                   : 'border-2 border-white/80 cursor-not-allowed opacity-55'
               } ${COLOR_CLASS[card.color]} text-white font-extrabold text-[0.9rem] transition-transform duration-150`}
             >
-              {card.value}
+              {formatCardLabel(card.value)}
             </button>
           );
         })}

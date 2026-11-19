@@ -59,39 +59,38 @@ export function useCallSignaling({
       }
     };
 
+    let streamIntervalChecks = 0;
     const streamInterval = setInterval(() => {
+      streamIntervalChecks++;
       if (localStreamRef.current) {
         syncStreamToParticipant();
+        clearInterval(streamInterval);
+      } else if (streamIntervalChecks > 150) {
         clearInterval(streamInterval);
       }
     }, 100);
 
-    // Prefetch TURN credentials and warm up WebRTC signaling socket early
+    // Warm up WebRTC signaling socket early (TURN fetch waits for authenticated turnToken)
     const webrtcUrl = process.env.NEXT_PUBLIC_WS_WEBRTC_URL || 'ws://localhost:5002';
-    void WebRtcService.getInstance().fetchCloudflareIceServers();
     void WebRtcService.getInstance().connectToSignalingServer(webrtcUrl).catch(() => {});
 
     let playerJoinAlertTimeout: ReturnType<typeof setTimeout> | null = null;
     let webrtcConnectGeneration = 0;
 
-    const connectWebRTC = async (roomId: string) => {
+    const connectWebRTC = async (roomId: string, signalingToken?: string | null) => {
       const currentGeneration = ++webrtcConnectGeneration;
       const webrtc = WebRtcService.getInstance();
-      const store = useCallStore.getState();
+      const tokenToUse = signalingToken ?? useCallStore.getState().signalingToken;
 
-      // Use cached ICE servers when available; only await if not yet fetched
       if (!webrtc.hasCachedIceServers()) {
         await webrtc.fetchCloudflareIceServers();
       }
 
-      // Abort if a newer connectWebRTC call started while fetching ICE servers
       if (currentGeneration !== webrtcConnectGeneration) {
         return;
       }
 
-      // Putuskan peer connection lama tanpa menutup WebSocket signaling agar reconnect instan
       webrtc.leaveCurrentRoom();
-
       webrtc.setLocalStream(localStreamRef.current);
       webrtc.onRemoteStream((participantId, stream) => {
         const currentStore = useCallStore.getState();
@@ -115,11 +114,10 @@ export function useCallSignaling({
           return;
         }
 
-        console.warn('[WebRTC] Participant not found in any list, adding to right:', participantId);
         currentStore.addParticipant('right', {
           id: participantId,
           stream,
-          name: 'Remote User',
+          name: 'Pengguna',
           isMuted: false,
           isCameraOff: false,
           isOwner: false,
@@ -131,7 +129,11 @@ export function useCallSignaling({
       webrtc
         .connectToSignalingServer(webrtcUrl)
         .then(() => {
-          webrtc.joinRoom(roomId, store.localUser?.id || '');
+          if (currentGeneration !== webrtcConnectGeneration) {
+            return;
+          }
+          const latestUserId = useCallStore.getState().localUser?.id || '';
+          webrtc.joinRoom(roomId, latestUserId, tokenToUse);
         })
         .catch((err) => {
           console.error('WebRTC connection failed:', err);
@@ -159,8 +161,15 @@ export function useCallSignaling({
         frameOwnerId: payload.ownerId,
         frameId: payload.frameId,
         inviteToken: null,
+        sessionToken: payload.sessionToken || null,
+        turnToken: payload.turnToken || null,
+        signalingToken: payload.signalingToken || null,
         leftParticipants: [local],
       });
+
+      if (payload.turnToken) {
+        WebRtcService.getInstance().setTurnToken(payload.turnToken);
+      }
 
       sessionStorage.setItem(
         'funfram_session',
@@ -172,7 +181,7 @@ export function useCallSignaling({
         })
       );
 
-      connectWebRTC(payload.frameId);
+      connectWebRTC(payload.frameId, payload.signalingToken);
     };
 
     // ── FRAME_JOINED: server confirms someone joined ──────────────────────
@@ -204,7 +213,18 @@ export function useCallSignaling({
       store.setLocalUser(local);
       store.setFsmState('FRAME');
       store.setFrameOwnerId(payload.ownerId);
-      useCallStore.setState({ frameId: payload.frameId, inviteToken: null, leftParticipants: members });
+      useCallStore.setState({
+        frameId: payload.frameId,
+        inviteToken: null,
+        sessionToken: payload.sessionToken || null,
+        turnToken: payload.turnToken || null,
+        signalingToken: payload.signalingToken || null,
+        leftParticipants: members,
+      });
+
+      if (payload.turnToken) {
+        WebRtcService.getInstance().setTurnToken(payload.turnToken);
+      }
 
       sessionStorage.setItem(
         'funfram_session',
@@ -228,7 +248,7 @@ export function useCallSignaling({
         }));
       }
 
-      connectWebRTC(payload.frameId);
+      connectWebRTC(payload.frameId, payload.signalingToken);
     };
 
     // ── PLAYER_JOIN: a peer joined our lobby ─────────────────────────────
@@ -260,13 +280,33 @@ export function useCallSignaling({
     // ── MATCH_FOUND: matched with another frame ───────────────────────────
     const onMatchFound = (payload: any) => {
       const store = useCallStore.getState();
+      const webrtc = WebRtcService.getInstance();
+      const isSameSession =
+        payload?.sessionId &&
+        store.sessionId === payload.sessionId &&
+        webrtc.getCurrentRoomId() === payload.sessionId;
+
+      if (payload?.turnToken) {
+        webrtc.setTurnToken(payload.turnToken);
+      }
+      useCallStore.setState({
+        ...(payload?.turnToken ? { turnToken: payload.turnToken } : {}),
+        ...(payload?.signalingToken ? { signalingToken: payload.signalingToken } : {}),
+      });
+
       store.setSession(payload);
+      if (isSameSession) {
+        return;
+      }
+
+      webrtc.setGameDockActive(false);
       useCallStore.setState({ generalChat: [] });
-      connectWebRTC(payload.sessionId);
+      void connectWebRTC(payload.sessionId, payload.signalingToken);
     };
 
     // ── MATCH_LEFT: opponent frame left ──────────────────────────────────
     const onMatchLeft = () => {
+      WebRtcService.getInstance().setGameDockActive(false);
       useCallStore.getState().handleOpponentLeft({});
     };
 
@@ -317,6 +357,7 @@ export function useCallSignaling({
     const onGameStart = (payload?: any) => {
       const store = useCallStore.getState();
       const gameType = payload?.gameType || 'guess_drawing';
+      WebRtcService.getInstance().setGameDockActive(true);
       store.setActiveGameType(gameType);
       store.setFsmState('PLAYING');
       store.updateGameState({ status: 'Waiting' });
@@ -368,8 +409,38 @@ export function useCallSignaling({
 
     const onGameEnd = () => {
       const store = useCallStore.getState();
+      WebRtcService.getInstance().setGameDockActive(false);
       store.updateGameState({ status: 'Finished' });
       store.setFsmState('MATCHED');
+    };
+
+    const onGameDeclined = () => {
+      onTopAlertRef.current('Lawan menolak undangan game.');
+      if (playerJoinAlertTimeout) clearTimeout(playerJoinAlertTimeout);
+      playerJoinAlertTimeout = setTimeout(() => onTopAlertRef.current(null), 4000);
+    };
+
+    const onReportConfirmed = () => {
+      onTopAlertRef.current('Laporan diterima. Pengguna diblokir dari pertemuan berikutnya.');
+      if (playerJoinAlertTimeout) clearTimeout(playerJoinAlertTimeout);
+      playerJoinAlertTimeout = setTimeout(() => onTopAlertRef.current(null), 4000);
+    };
+
+    const onSessionRestored = (payload: any) => {
+      if (payload?.turnToken) {
+        WebRtcService.getInstance().setTurnToken(payload.turnToken);
+      }
+      if (payload?.signalingToken) {
+        useCallStore.setState({
+          ...(payload?.turnToken ? { turnToken: payload.turnToken } : {}),
+          signalingToken: payload.signalingToken,
+        });
+      }
+    };
+
+    const onRejoinFailed = () => {
+      useCallStore.getState().showCustomAlert('Sesi sebelumnya telah berakhir. Anda akan dibuatkan frame baru.');
+      onLeaveRef.current();
     };
 
     const onCanvasEvent = (payload: CanvasEvent) => {
@@ -443,11 +514,12 @@ export function useCallSignaling({
 
     const onWsReconnected = () => {
       const store = useCallStore.getState();
-      if (store.localUser?.id && store.localUser.id !== 'pending' && store.frameId) {
+      if (store.localUser?.id && store.localUser.id !== 'pending' && store.frameId && store.sessionToken) {
         ws.sendEvent('REJOIN_SESSION', {
           userId: store.localUser.id,
           frameId: store.frameId,
           username: store.localUser.name,
+          sessionToken: store.sessionToken,
         });
       }
     };
@@ -475,6 +547,10 @@ export function useCallSignaling({
     ws.on('SCORE_UPDATE', onScoreUpdate);
     ws.on('CHAT_MESSAGE', onChatMessage);
     ws.on('GAME_END', onGameEnd);
+    ws.on('GAME_DECLINED', onGameDeclined);
+    ws.on('REPORT_CONFIRMED', onReportConfirmed);
+    ws.on('SESSION_RESTORED', onSessionRestored);
+    ws.on('REJOIN_FAILED', onRejoinFailed);
     ws.on('CANVAS_START', onCanvasEvent);
     ws.on('CANVAS_MOVE', onCanvasEvent);
     ws.on('CANVAS_END', onCanvasEvent);
@@ -506,6 +582,10 @@ export function useCallSignaling({
       ws.off('SCORE_UPDATE', onScoreUpdate);
       ws.off('CHAT_MESSAGE', onChatMessage);
       ws.off('GAME_END', onGameEnd);
+      ws.off('GAME_DECLINED', onGameDeclined);
+      ws.off('REPORT_CONFIRMED', onReportConfirmed);
+      ws.off('SESSION_RESTORED', onSessionRestored);
+      ws.off('REJOIN_FAILED', onRejoinFailed);
       ws.off('CANVAS_START', onCanvasEvent);
       ws.off('CANVAS_MOVE', onCanvasEvent);
       ws.off('CANVAS_END', onCanvasEvent);

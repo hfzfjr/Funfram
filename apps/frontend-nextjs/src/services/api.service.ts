@@ -1,10 +1,4 @@
-import { InviteParams, generateSimulatedSignature } from './hmac';
-
-export interface CreateFrameResponse {
-    frameId: string;
-    ownerId: string;
-    token: string;
-}
+import { WebSocketService } from './websocket.service';
 
 export interface VerifyInviteResponse {
     isValid: boolean;
@@ -25,61 +19,35 @@ export class ApiService {
     }
 
     /**
-     * Creates a new Frame on the server.
+     * Requests a server-signed HMAC invite token from Go WebSocket hub.
      */
-    public async createFrame(username: string): Promise<CreateFrameResponse> {
-        // Simulate HTTP POST /api/v1/frames
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                const frameId = 'frm-' + Math.random().toString(36).substring(2, 9);
-                const ownerId = 'usr-' + Math.random().toString(36).substring(2, 9);
-                resolve({
-                    frameId,
-                    ownerId,
-                    token: 'mock-jwt-token',
-                });
-            }, 300);
+    public async generateInviteLink(frameId: string, _sessionId?: string): Promise<string> {
+        const origin =
+            typeof window !== 'undefined'
+                ? window.location.origin
+                : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+
+        const ws = WebSocketService.getInstance();
+        return new Promise<string>((resolve) => {
+            const timeout = setTimeout(() => {
+                ws.off('INVITE_CREATED', onCreated);
+                resolve(`${origin}/join-frame?frameId=${encodeURIComponent(frameId)}`);
+            }, 3000);
+
+            const onCreated = (payload: any) => {
+                if (payload?.frameId === frameId && payload?.inviteToken) {
+                    clearTimeout(timeout);
+                    ws.off('INVITE_CREATED', onCreated);
+                    const params = new URLSearchParams({
+                        frameId: payload.frameId,
+                        token: payload.inviteToken,
+                    });
+                    resolve(`${origin}/join-frame?${params.toString()}`);
+                }
+            };
+
+            ws.on('INVITE_CREATED', onCreated);
+            ws.sendEvent('INVITE_CREATE', {});
         });
-    }
-
-    /**
-     * Generates a temporary invite link.
-     */
-    public async generateInviteLink(frameId: string, sessionId: string): Promise<string> {
-        // In the future, this makes a POST /api/v1/invites which signs the token server-side.
-        // For now, we sign it on the client.
-        const expire = Date.now() + 5 * 60 * 1000; // 5 minutes validity
-        const nonce = Math.random().toString(36).substring(2, 9);
-        const params: InviteParams = { frameId, sessionId: sessionId || 'no-session', expire, nonce };
-        const signature = await generateSimulatedSignature(params);
-
-        const origin = typeof window !== 'undefined' ? window.location.origin : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-        return `${origin}/join-frame?invite=${signature}&frameId=${frameId}&sessionId=${sessionId || 'no-session'}&expire=${expire}&nonce=${nonce}`;
-    }
-
-    /**
-     * Checks if an invite link query is valid.
-     */
-    public async verifyInviteLink(
-        frameId: string,
-        sessionId: string,
-        expireStr: string,
-        nonce: string,
-        signature: string
-    ): Promise<VerifyInviteResponse> {
-        const expire = parseInt(expireStr, 10);
-
-        // Simulating GET /api/v1/invites/verify
-        const now = Date.now();
-        if (now > expire) {
-            return { isValid: false, frameId, sessionId: null };
-        }
-
-        // Simulating DB active frame verification
-        return {
-            isValid: true,
-            frameId,
-            sessionId: sessionId === 'no-session' ? null : sessionId,
-        };
     }
 }

@@ -56,6 +56,12 @@ class WebSocketServiceClass {
       this.hasConnectedOnce = true;
       this.reconnectAttempts = 0; // Reset reconnect attempts on successful connection
       this.clearReconnectTimer();
+      while (this.pendingQueue.length > 0 && this.ws?.readyState === WebSocket.OPEN) {
+        const queued = this.pendingQueue.shift();
+        if (queued) {
+          this.sendEvent(queued.event, queued.payload);
+        }
+      }
       if (isReconnect) {
         this.emitter.emit('WS_RECONNECTED', {});
       }
@@ -66,9 +72,11 @@ class WebSocketServiceClass {
         const data = JSON.parse(e.data);
         const { event, payload } = data;
         this.emitter.emit(event, payload);
-        console.debug('WebSocket message received', event, payload);
+        if (process.env.NODE_ENV !== 'production') {
+          console.debug('WebSocket message received', event);
+        }
       } catch (_) {
-        console.warn('Invalid WebSocket message format', (e as any).data);
+        console.warn('Invalid WebSocket message format');
       }
     };
 
@@ -122,20 +130,19 @@ class WebSocketServiceClass {
     console.info('WebSocket sent', event);
   }
 
-  /** Send immediately when open, or wait for the current connection to open. */
-  sendWhenOpen(event: string, payload: any) {
-    if (!this.ws || this.ws.readyState === WebSocket.CLOSING || this.ws.readyState === WebSocket.CLOSED) {
-      this.connect();
-    }
+  private pendingQueue: Array<{ event: string; payload: any }> = [];
 
+  /** Send immediately when open, or queue until the socket opens (survives reconnect). */
+  sendWhenOpen(event: string, payload: any) {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.sendEvent(event, payload);
       return;
     }
 
-    this.ws?.addEventListener('open', () => {
-      this.sendEvent(event, payload);
-    }, { once: true });
+    this.pendingQueue.push({ event, payload });
+    if (!this.ws || this.ws.readyState === WebSocket.CLOSING || this.ws.readyState === WebSocket.CLOSED) {
+      this.connect();
+    }
   }
 
   /** Register a listener for a specific event. */

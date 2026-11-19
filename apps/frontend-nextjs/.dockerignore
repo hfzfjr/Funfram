@@ -1,0 +1,13 @@
+.git
+.gitignore
+.dockerignore
+.env
+.env.*
+!.env.example
+node_modules
+.npm-cache
+.next
+out
+coverage
+*.log
+.DS_Store

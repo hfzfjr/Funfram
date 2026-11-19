@@ -116,8 +116,7 @@ function getPseudoMoves(board: Board, r: number, c: number): [number, number][] 
 export default function ChessGame() {
   const sessionId = useCallStore((s) => s.sessionId);
   const localUser = useCallStore((s) => s.localUser);
-  const leftParticipants = useCallStore((s) => s.leftParticipants);
-  const rightParticipants = useCallStore((s) => s.rightParticipants);
+  const localFrameRole = useCallStore((s) => s.localFrameRole);
 
   const [board, setBoard] = useState<Board>(() => createInitialBoard());
   const [turn, setTurn] = useState<PieceColor>('w');
@@ -125,13 +124,11 @@ export default function ChessGame() {
   const [winner, setWinner] = useState<PieceColor | null>(null);
   const [lastMove, setLastMove] = useState<string>('');
 
-  // Left frame = White ('w'), Right frame = Black ('b')
+  // Canonical server frame role: Frame A = White ('w'), Frame B = Black ('b')
   const myColor: PieceColor | null = useMemo(() => {
     if (!localUser) return null;
-    if (leftParticipants.some((p) => p.id === localUser.id)) return 'w';
-    if (rightParticipants.some((p) => p.id === localUser.id)) return 'b';
-    return null;
-  }, [localUser, leftParticipants, rightParticipants]);
+    return localFrameRole === 'A' ? 'w' : 'b';
+  }, [localUser, localFrameRole]);
 
   const legalMoves = useMemo(() => {
     if (!selected) return new Set<string>();
@@ -141,10 +138,21 @@ export default function ChessGame() {
 
   useEffect(() => {
     const ws = WebSocketService.getInstance();
+    const parseServerBoard = (rawBoard: any): Board =>
+      rawBoard.map((row: any[]) =>
+        row.map((cell: any) => {
+          if (!cell) return null;
+          if (typeof cell === 'string' && cell.length >= 2) {
+            return { color: cell[0] as PieceColor, type: cell[1] as PieceType };
+          }
+          return cell;
+        })
+      );
+
     const handleAction = (payload: any) => {
       if (payload?.game !== 'chess') return;
       if (payload.action === 'MOVE' && payload.board) {
-        setBoard(payload.board);
+        setBoard(parseServerBoard(payload.board));
         setTurn(payload.nextTurn);
         setWinner(payload.winner ?? null);
         setLastMove(payload.lastMove || '');
@@ -173,36 +181,15 @@ export default function ChessGame() {
       }
 
       if (legalMoves.has(`${r},${c}`)) {
-        const nextBoard = board.map((row) => [...row]);
-        const moving = { ...nextBoard[sr][sc]! };
-        const captured = nextBoard[r][c];
-
-        // Auto-promote Pawn to Queen
-        if (moving.type === 'P' && (r === 0 || r === 7)) {
-          moving.type = 'Q';
-        }
-
-        nextBoard[r][c] = moving;
-        nextBoard[sr][sc] = null;
-
-        const nextWinner = captured?.type === 'K' ? turn : null;
-        const nextTurn: PieceColor = turn === 'w' ? 'b' : 'w';
-        const moveText = `${PIECE_UNICODE[moving.color + moving.type]} ${String.fromCharCode(97 + sc)}${8 - sr} → ${String.fromCharCode(97 + c)}${8 - r}`;
-
-        setBoard(nextBoard);
-        setTurn(nextTurn);
-        setWinner(nextWinner);
-        setLastMove(moveText);
         setSelected(null);
-
         WebSocketService.getInstance().sendEvent('GAME_ACTION', {
           game: 'chess',
           action: 'MOVE',
           sessionId,
-          board: nextBoard,
-          nextTurn,
-          winner: nextWinner,
-          lastMove: moveText,
+          fromRow: sr,
+          fromCol: sc,
+          toRow: r,
+          toCol: c,
         });
         return;
       }

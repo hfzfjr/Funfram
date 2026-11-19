@@ -1,5 +1,4 @@
 const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
-    // STUN servers (lightweight, no auth)
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
@@ -14,11 +13,12 @@ export class WebRtcService {
     private signalingSocket: WebSocket | null = null;
     private currentRoomId: string | null = null;
     private localUserId: string | null = null;
+    private signalingToken: string | null = null;
+    private turnToken: string | null = null;
     private iceServers: RTCIceServer[] = [...DEFAULT_ICE_SERVERS];
     private iceServersReady: boolean = true;
-    private pendingUserJoins: string[] = [];
 
-    // For Perfect Negotiation
+    // Perfect Negotiation state
     private makingOffer: Map<string, boolean> = new Map();
     private ignoreOffer: Map<string, boolean> = new Map();
     private isSettingRemoteAnswerPending: Map<string, boolean> = new Map();
@@ -26,20 +26,49 @@ export class WebRtcService {
     private remoteStreams: Map<string, MediaStream> = new Map();
     private iceRestarts: Map<string, number> = new Map();
     private statsPollingIntervals: Map<string, ReturnType<typeof setInterval>> = new Map();
+    private prevStats: Map<string, { lost: number; received: number; poorStreak: number }> = new Map();
+    private peerIsRelay: Map<string, boolean> = new Map();
     private wasConnected: Map<string, boolean> = new Map();
+    private isGameDockActive = false;
+
     private iceServersFetchedAt = 0;
     private iceFetchPromise: Promise<void> | null = null;
     private signalingUrl: string | null = null;
     private signalingConnectPromise: Promise<void> | null = null;
+    private shouldReconnectSignaling = true;
+    private signalingReconnectAttempts = 0;
+    private signalingReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
     private constructor() { }
 
+    public setTurnToken(token: string | null) {
+        if (token && token !== this.turnToken) {
+            this.turnToken = token;
+            this.iceServersFetchedAt = 0; // force refresh with valid auth token
+        } else {
+            this.turnToken = token;
+        }
+    }
+
+    public setGameDockActive(active: boolean) {
+        if (this.isGameDockActive === active) return;
+        this.isGameDockActive = active;
+        void this.updateAllPeerBitrates();
+    }
+
+    public getCurrentRoomId(): string | null {
+        return this.currentRoomId;
+    }
+
     public hasCachedIceServers(): boolean {
-        return this.iceServersReady && Date.now() - this.iceServersFetchedAt < 15 * 60 * 1000;
+        return this.iceServersReady && this.iceServersFetchedAt > 0 && Date.now() - this.iceServersFetchedAt < 12 * 60 * 1000;
     }
 
     public async fetchCloudflareIceServers(force = false): Promise<void> {
         if (!force && this.hasCachedIceServers()) {
+            return;
+        }
+        if (!this.turnToken) {
             return;
         }
         if (this.iceFetchPromise) {
@@ -51,42 +80,39 @@ export class WebRtcService {
                 const res = await fetch('/api/turn-credentials', {
                     headers: {
                         'X-Funfram-Client': '1',
+                        'Authorization': `Bearer ${this.turnToken}`,
                     },
                 });
                 if (!res.ok) {
-                    console.warn('[WebRtcService] Failed to fetch TURN credentials, falling back to default STUN', await res.text());
                     return;
                 }
                 const data = await res.json();
                 if (data.iceServers) {
-                    // Handle both Array (Metered/Twilio) and Object (Cloudflare) responses
                     const serversArray = Array.isArray(data.iceServers) ? data.iceServers : [data.iceServers];
-
-                    // Filter out port 53 (as recommended for Cloudflare TURN)
-                    const filteredServers = serversArray.map((server: any) => {
+                    const filteredServers = serversArray.map((server: RTCIceServer) => {
                         if (server.urls) {
                             const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
-                            server.urls = urls.filter((url: string) => !url.includes(':53?'));
+                            return {
+                                ...server,
+                                urls: urls.filter((url: string) => !url.includes(':53?')),
+                            };
                         }
                         return server;
                     });
                     this.iceServers = [...DEFAULT_ICE_SERVERS, ...filteredServers];
                     this.iceServersReady = true;
                     this.iceServersFetchedAt = Date.now();
-                    console.log('[WebRtcService] Fetched Cloudflare ICE Servers:', this.iceServers);
 
-                    // Update existing connections if any
-                    this.peerConnections.forEach((pc, id) => {
+                    this.peerConnections.forEach((pc) => {
                         try {
                             pc.setConfiguration({ iceServers: this.iceServers });
-                            console.log(`[WebRtcService] Updated ICE servers on existing PC for: ${id}`);
-                        } catch (e) {
-                            console.warn('[WebRtcService] Error updating ice servers:', e);
+                        } catch {
+                            // ignore
                         }
                     });
                 }
-            } catch (e) {
-                console.error('[WebRtcService] Error fetching Cloudflare ICE servers:', e);
+            } catch {
+                // fallback to default STUN
             } finally {
                 this.iceFetchPromise = null;
             }
@@ -95,14 +121,78 @@ export class WebRtcService {
         return this.iceFetchPromise;
     }
 
+    private isPolite(participantId: string): boolean {
+        return (this.localUserId || '') < participantId;
+    }
+
     private classifyNetworkQuality(packetLoss: number, rtt: number): 'good' | 'medium' | 'poor' {
         if (packetLoss < 2 && rtt < 150) return 'good';
         if (packetLoss < 5 && rtt < 300) return 'medium';
         return 'poor';
     }
 
+    private async applyAdaptiveVideoParameters(participantId: string, pc: RTCPeerConnection) {
+        const videoSender = pc.getSenders().find((s) => s.track?.kind === 'video');
+        if (!videoSender) return;
+
+        try {
+            const params = videoSender.getParameters();
+            if (!params.encodings || params.encodings.length === 0) {
+                params.encodings = [{}];
+            }
+
+            const peerCount = this.peerConnections.size;
+            const isRelay = this.peerIsRelay.get(participantId) || false;
+            const poorStreak = this.prevStats.get(participantId)?.poorStreak || 0;
+
+            let maxBitrate = 1_200_000;
+            let scaleResolutionDownBy = 1.0;
+            let maxFramerate = 30;
+
+            if (this.isGameDockActive || poorStreak >= 2) {
+                // Tier 4 (Game PiP / severe congestion)
+                maxBitrate = 250_000;
+                scaleResolutionDownBy = 2.5;
+                maxFramerate = 20;
+            } else if (peerCount > 1) {
+                // Tier 3 (Co-Op 2v2 Mesh)
+                maxBitrate = 450_000;
+                scaleResolutionDownBy = 1.5;
+                maxFramerate = 24;
+            } else if (isRelay) {
+                // Tier 2 (1v1 TURN Relay)
+                maxBitrate = 750_000;
+                scaleResolutionDownBy = 1.5;
+                maxFramerate = 30;
+            } else {
+                // Tier 1 (1v1 Direct P2P)
+                maxBitrate = 1_200_000;
+                scaleResolutionDownBy = 1.0;
+                maxFramerate = 30;
+            }
+
+            params.degradationPreference = 'maintain-framerate';
+            params.encodings[0] = {
+                ...params.encodings[0],
+                maxBitrate,
+                scaleResolutionDownBy,
+                maxFramerate,
+            };
+            await videoSender.setParameters(params);
+        } catch {
+            // Some browsers may reject parameters before track negotiation completes
+        }
+    }
+
+    public async updateAllPeerBitrates() {
+        const updates: Promise<void>[] = [];
+        this.peerConnections.forEach((pc, id) => {
+            updates.push(this.applyAdaptiveVideoParameters(id, pc));
+        });
+        await Promise.allSettled(updates);
+    }
+
     private startStatsPolling(participantId: string, pc: RTCPeerConnection) {
-        // Clear existing interval if any
         this.stopStatsPolling(participantId);
 
         const interval = setInterval(async () => {
@@ -117,35 +207,63 @@ export class WebRtcService {
                     this.stopStatsPolling(participantId);
                     return;
                 }
-                let packetsLost = 0;
-                let packetsReceived = 0;
-                let currentRoundTripTime = 0;
-                let jitter = 0;
 
-                stats.forEach(report => {
+                let totalLost = 0;
+                let totalReceived = 0;
+                let currentRoundTripTime = 0;
+                let selectedPairId: string | undefined;
+
+                stats.forEach((report) => {
                     if (report.type === 'inbound-rtp' && report.kind === 'video') {
-                        packetsLost = report.packetsLost || 0;
-                        packetsReceived = report.packetsReceived || 0;
-                        jitter = report.jitter || 0;
+                        totalLost = report.packetsLost || 0;
+                        totalReceived = report.packetsReceived || 0;
                     }
-                    if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-                        currentRoundTripTime = report.currentRoundTripTime || 0;
+                    if (report.type === 'transport' && report.selectedCandidatePairId) {
+                        selectedPairId = report.selectedCandidatePairId;
                     }
                 });
 
-                const packetLossPercent = packetsReceived > 0 ? (packetsLost / packetsReceived) * 100 : 0;
-                const rttMs = currentRoundTripTime * 1000; // Convert to milliseconds
+                if (selectedPairId) {
+                    const pair = stats.get(selectedPairId);
+                    if (pair) {
+                        currentRoundTripTime = pair.currentRoundTripTime || 0;
+                        const localCand = stats.get(pair.localCandidateId);
+                        const remoteCand = stats.get(pair.remoteCandidateId);
+                        const isRelay = localCand?.candidateType === 'relay' || remoteCand?.candidateType === 'relay';
+                        if (this.peerIsRelay.get(participantId) !== isRelay) {
+                            this.peerIsRelay.set(participantId, isRelay);
+                            void this.applyAdaptiveVideoParameters(participantId, pc);
+                        }
+                    }
+                }
 
+                const prev = this.prevStats.get(participantId) || { lost: 0, received: 0, poorStreak: 0 };
+                const deltaLost = Math.max(0, totalLost - prev.lost);
+                const deltaReceived = Math.max(0, totalReceived - prev.received);
+                const packetLossPercent = deltaReceived + deltaLost > 0
+                    ? (deltaLost / (deltaReceived + deltaLost)) * 100
+                    : 0;
+                const rttMs = currentRoundTripTime * 1000;
                 const quality = this.classifyNetworkQuality(packetLossPercent, rttMs);
 
-                // Update store with network quality
-                import('@/store/useCallStore').then(module => {
+                const nextPoorStreak = quality === 'poor' ? prev.poorStreak + 1 : 0;
+                this.prevStats.set(participantId, {
+                    lost: totalLost,
+                    received: totalReceived,
+                    poorStreak: nextPoorStreak,
+                });
+
+                if ((nextPoorStreak === 2) || (prev.poorStreak >= 2 && nextPoorStreak === 0)) {
+                    void this.applyAdaptiveVideoParameters(participantId, pc);
+                }
+
+                import('@/store/useCallStore').then((module) => {
                     module.useCallStore.getState().updateParticipantNetworkQuality(participantId, quality);
                 });
-            } catch (error) {
-                console.error('[WebRtcService] Error getting stats:', error);
+            } catch {
+                // ignore stats errors on closing PC
             }
-        }, 4000); // Poll every 4 seconds
+        }, 4000);
 
         this.statsPollingIntervals.set(participantId, interval);
     }
@@ -168,28 +286,29 @@ export class WebRtcService {
     public setLocalStream(stream: MediaStream | null) {
         this.localStream = stream;
 
-        // Update existing peer connections if stream changes
-        this.peerConnections.forEach((pc) => {
+        this.peerConnections.forEach((pc, id) => {
             if (this.localStream) {
-                // If we have transceivers, we can replace the track
                 const senders = pc.getSenders();
                 const transceivers = pc.getTransceivers();
-                this.localStream.getTracks().forEach(track => {
-                    const sender = senders.find(s => s.track?.kind === track.kind);
+                this.localStream.getTracks().forEach((track) => {
+                    const sender = senders.find((s) => s.track?.kind === track.kind);
                     if (sender) {
-                        sender.replaceTrack(track);
+                        void sender.replaceTrack(track);
                     } else {
-                        const emptyTransceiver = transceivers.find(t => t.sender.track === null && t.receiver.track.kind === track.kind);
+                        const emptyTransceiver = transceivers.find(
+                            (t) => t.sender.track === null && t.receiver?.track?.kind === track.kind
+                        );
                         if (emptyTransceiver) {
-                            emptyTransceiver.sender.replaceTrack(track);
-                            emptyTransceiver.direction = 'sendrecv'; // Force upgrade
+                            void emptyTransceiver.sender.replaceTrack(track);
+                            emptyTransceiver.direction = 'sendrecv';
                         } else {
                             pc.addTrack(track, this.localStream!);
                         }
                     }
                 });
+                void this.applyAdaptiveVideoParameters(id, pc);
             } else {
-                pc.getSenders().forEach(sender => {
+                pc.getSenders().forEach((sender) => {
                     if (sender.track) {
                         sender.replaceTrack(null).catch(() => {});
                     }
@@ -201,7 +320,9 @@ export class WebRtcService {
     private async forceRenegotiate(participantId: string) {
         const pc = this.getPeerConnection(participantId);
         try {
+            this.makingOffer.set(participantId, true);
             const offer = await pc.createOffer();
+            if (pc.signalingState !== 'stable') return;
             await pc.setLocalDescription(offer);
             this.sendSignalingMessage({
                 type: 'offer',
@@ -210,18 +331,46 @@ export class WebRtcService {
             });
         } catch (err) {
             console.error('[WebRtcService] Error forcing renegotiation:', err);
+        } finally {
+            this.makingOffer.set(participantId, false);
         }
     }
 
     public onRemoteStream(callback: (participantId: string, stream: MediaStream) => void) {
         this.onRemoteStreamCallback = callback;
-        // IMPORTANT: If streams were established before the UI subscribed, fire immediately!
         this.remoteStreams.forEach((stream, participantId) => {
             callback(participantId, stream);
         });
     }
 
+    private clearSignalingReconnectTimer() {
+        if (this.signalingReconnectTimer) {
+            clearTimeout(this.signalingReconnectTimer);
+            this.signalingReconnectTimer = null;
+        }
+    }
+
+    private scheduleSignalingReconnect() {
+        if (!this.shouldReconnectSignaling || !this.signalingUrl || this.signalingReconnectTimer) {
+            return;
+        }
+        const delay = Math.min(1000 * Math.pow(2, this.signalingReconnectAttempts), 8000);
+        this.signalingReconnectAttempts += 1;
+        this.signalingReconnectTimer = setTimeout(() => {
+            this.signalingReconnectTimer = null;
+            if (!this.signalingUrl) return;
+            this.connectToSignalingServer(this.signalingUrl)
+                .then(() => {
+                    if (this.currentRoomId && this.localUserId && this.signalingToken) {
+                        this.joinRoom(this.currentRoomId, this.localUserId, this.signalingToken);
+                    }
+                })
+                .catch(() => {});
+        }, delay);
+    }
+
     public connectToSignalingServer(url: string): Promise<void> {
+        this.shouldReconnectSignaling = true;
         if (this.signalingSocket && this.signalingSocket.readyState === WebSocket.OPEN && this.signalingUrl === url) {
             return Promise.resolve();
         }
@@ -244,13 +393,13 @@ export class WebRtcService {
                 this.signalingSocket = new WebSocket(url);
 
                 this.signalingSocket.onopen = () => {
-                    console.log('[WebRtcService] Connected to signaling server');
+                    this.signalingReconnectAttempts = 0;
+                    this.clearSignalingReconnectTimer();
                     this.signalingConnectPromise = null;
                     resolve();
                 };
 
                 this.signalingSocket.onerror = (error) => {
-                    console.error('[WebRtcService] Signaling socket error:', error);
                     this.signalingConnectPromise = null;
                     reject(error);
                 };
@@ -258,14 +407,18 @@ export class WebRtcService {
                 this.signalingSocket.onmessage = (event) => {
                     try {
                         this.handleSignalingMessage(JSON.parse(event.data));
-                    } catch (parseErr) {
-                        console.warn('[WebRtcService] Invalid signaling message:', parseErr);
+                    } catch {
+                        // ignore invalid message
                     }
                 };
 
-                this.signalingSocket.onclose = () => {
-                    console.log('[WebRtcService] Signaling socket closed');
+                this.signalingSocket.onclose = (ev) => {
                     this.signalingConnectPromise = null;
+                    if (ev.code === 4001 || ev.code === 4003) {
+                        console.warn(`[WebRtcService] Signaling closed (${ev.code}): ${ev.reason || 'unauthorized'}`);
+                        return;
+                    }
+                    this.scheduleSignalingReconnect();
                 };
             } catch (error) {
                 this.signalingConnectPromise = null;
@@ -276,156 +429,150 @@ export class WebRtcService {
         return this.signalingConnectPromise;
     }
 
-    public joinRoom(roomId: string, userId: string) {
+    public joinRoom(roomId: string, userId: string, signalingToken?: string | null) {
         if (!this.signalingSocket || this.signalingSocket.readyState !== WebSocket.OPEN) {
-            console.error('[WebRtcService] Signaling socket not connected');
+            return;
+        }
+        const token = signalingToken ?? this.signalingToken;
+        if (!token) {
             return;
         }
 
         this.currentRoomId = roomId;
         this.localUserId = userId;
+        this.signalingToken = token;
         this.signalingSocket.send(JSON.stringify({
             type: 'join',
             roomID: roomId,
-            userId: userId,
+            userId,
+            token,
         }));
     }
 
     private handleSignalingMessage(data: any) {
-        console.log('[WebRtcService] Received signaling message:', data.type);
-
         switch (data.type) {
             case 'ice-servers':
-                // We ignore ice-servers from the backend because we use Cloudflare TURN securely
                 break;
 
             case 'user-joined':
-                console.log('[WebRtcService] User joined:', data.userId);
-                // Inisialisasi awal tanpa negosiasi (menunggu peer-ready)
-                this.createPeerConnection(data.userId, false);
+                this.createPeerConnection(data.userId);
                 break;
 
             case 'peer-ready':
-                console.log(`[WebRtcService] Peer ready. Role: ${data.role}, PeerId: ${data.peerId}`);
-                // Proactively create PC so it's ready for offer/answer
-                this.createPeerConnection(data.peerId, false);
-                
+                this.createPeerConnection(data.peerId);
                 if (data.role === 'offerer') {
-                    this.initiateOffer(data.peerId);
+                    void this.initiateOffer(data.peerId);
                 }
                 break;
 
             case 'offer':
-                this.handleOffer(data.offer, data.sender);
+                void this.handleOffer(data.offer, data.sender);
                 break;
 
             case 'answer':
-                this.handleAnswer(data.answer, data.sender);
+                void this.handleAnswer(data.answer, data.sender);
                 break;
 
             case 'ice-candidate':
-                this.handleIceCandidate(data.candidate, data.sender);
+                void this.handleIceCandidate(data.candidate, data.sender);
                 break;
 
             case 'user-left':
-                console.log('[WebRtcService] User left:', data.userId);
                 this.disconnectPeer(data.userId);
                 break;
-
-            default:
-                console.log('[WebRtcService] Unknown message type:', data.type);
         }
     }
 
     private getPeerConnection(participantId: string): RTCPeerConnection {
         let pc = this.peerConnections.get(participantId);
         if (!pc) {
-            pc = this.createPeerConnection(participantId, false);
+            pc = this.createPeerConnection(participantId);
         }
         return pc;
     }
 
     private async initiateOffer(participantId: string) {
-        const timestamp = new Date().toISOString();
         const pc = this.getPeerConnection(participantId);
         try {
-            console.log(`[WebRtcService][${timestamp}] Server assigned as offerer. Creating offer for ${participantId}`);
-            
-            // Add local tracks via transceivers for robust negotiation (ONLY as Offerer)
-            if (this.localStream) {
-                const hasVideo = this.localStream.getVideoTracks().length > 0;
-                const hasAudio = this.localStream.getAudioTracks().length > 0;
-                
-                this.localStream.getTracks().forEach(track => {
-                    pc.addTransceiver(track, { direction: 'sendrecv', streams: [this.localStream!] });
-                });
+            this.makingOffer.set(participantId, true);
+            const existingTransceivers = pc.getTransceivers();
 
-                // Guarantee two-way channels even if local hardware is missing one
-                if (!hasVideo) pc.addTransceiver('video', { direction: 'sendrecv' });
-                if (!hasAudio) pc.addTransceiver('audio', { direction: 'sendrecv' });
-            } else {
-                pc.addTransceiver('video', { direction: 'sendrecv' });
-                pc.addTransceiver('audio', { direction: 'sendrecv' });
-            }
+            const ensureKind = (kind: 'video' | 'audio', track?: MediaStreamTrack) => {
+                const existing = existingTransceivers.find(
+                    (t) => t.sender.track?.kind === kind || t.receiver?.track?.kind === kind
+                );
+                if (existing) {
+                    if (track && existing.sender.track !== track) {
+                        void existing.sender.replaceTrack(track);
+                    }
+                    existing.direction = 'sendrecv';
+                } else if (track && this.localStream) {
+                    pc.addTransceiver(track, { direction: 'sendrecv', streams: [this.localStream] });
+                } else {
+                    pc.addTransceiver(kind, { direction: 'sendrecv' });
+                }
+            };
+
+            const videoTrack = this.localStream?.getVideoTracks()[0];
+            const audioTrack = this.localStream?.getAudioTracks()[0];
+            ensureKind('video', videoTrack);
+            ensureKind('audio', audioTrack);
 
             const offer = await pc.createOffer();
+            if (pc.signalingState !== 'stable') return;
             await pc.setLocalDescription(offer);
-            
+
             this.sendSignalingMessage({
                 type: 'offer',
                 offer: pc.localDescription,
                 targetId: participantId,
             });
+            void this.applyAdaptiveVideoParameters(participantId, pc);
         } catch (err) {
-            console.error(`[WebRtcService][${timestamp}] Error creating offer for ${participantId}:`, err);
+            console.error(`[WebRtcService] Error creating offer for ${participantId}:`, err);
+        } finally {
+            this.makingOffer.set(participantId, false);
         }
     }
 
-    private createPeerConnection(participantId: string, isInitiator: boolean): RTCPeerConnection {
+    private createPeerConnection(participantId: string): RTCPeerConnection {
         if (this.peerConnections.has(participantId)) {
             return this.peerConnections.get(participantId)!;
         }
 
-        const timestamp = new Date().toISOString();
-        console.log(`[WebRtcService][${timestamp}] Creating peer connection with: ${participantId} - Match/Session ID: ${this.currentRoomId}`);
-
-        // Gunakan gabungan ICE Servers lengkap (STUN Google + Coturn)
-        const validServers = (this.iceServers || []).filter(server => {
+        const validServers = (this.iceServers || []).filter((server) => {
             const urlString = Array.isArray(server.urls) ? server.urls.join(',') : server.urls;
             return !urlString.includes('localhost');
         });
 
-        // Debug mode: force relay if localStorage flag is set
-        const forceRelay = typeof window !== 'undefined' && localStorage.getItem('FORCE_RELAY') === 'true';
+        const forceRelay =
+            process.env.NODE_ENV !== 'production' &&
+            typeof window !== 'undefined' &&
+            localStorage.getItem('FORCE_RELAY') === 'true';
 
         const config: RTCConfiguration = {
             iceServers: validServers.length > 0 ? validServers : DEFAULT_ICE_SERVERS,
-            iceCandidatePoolSize: 10,
+            iceCandidatePoolSize: 2,
             ...(forceRelay ? { iceTransportPolicy: 'relay' } : {}),
         };
 
         const pc = new RTCPeerConnection(config);
 
-        // Perfect Negotiation states
         this.makingOffer.set(participantId, false);
         this.ignoreOffer.set(participantId, false);
         this.isSettingRemoteAnswerPending.set(participantId, false);
         this.iceRestarts.set(participantId, 0);
 
         pc.ontrack = (event) => {
-            const timestamp = new Date().toISOString();
-            console.log(`[WebRtcService][${timestamp}] ontrack fired for ${participantId} - Match/Session ID: ${this.currentRoomId}, Track kind: ${event.track.kind}`);
-            
             let stream = this.remoteStreams.get(participantId);
             let isNewStream = false;
             if (!stream) {
                 stream = new MediaStream();
                 isNewStream = true;
             }
-            
+
             if (!stream.getTracks().includes(event.track)) {
                 stream.addTrack(event.track);
-                // Only fire callback if we actually added a track
                 this.remoteStreams.set(participantId, stream);
                 if (this.onRemoteStreamCallback) {
                     this.onRemoteStreamCallback(participantId, stream);
@@ -440,15 +587,6 @@ export class WebRtcService {
 
         pc.onicecandidate = (event) => {
             if (event.candidate) {
-                // Debug logging for ICE candidates (temporary for verification)
-                console.log(`[WebRtcService] ICE Candidate for ${participantId}:`, {
-                    type: event.candidate.type,
-                    protocol: event.candidate.protocol,
-                    port: event.candidate.port,
-                    address: event.candidate.address,
-                    candidate: event.candidate.candidate
-                });
-
                 this.sendSignalingMessage({
                     type: 'ice-candidate',
                     candidate: event.candidate,
@@ -457,15 +595,7 @@ export class WebRtcService {
             }
         };
 
-        pc.onsignalingstatechange = () => {
-            const timestamp = new Date().toISOString();
-            console.log(`[WebRtcService][${timestamp}] Signaling state with ${participantId}: ${pc.signalingState} - Match/Session ID: ${this.currentRoomId}`);
-        };
-
         pc.oniceconnectionstatechange = () => {
-            const timestamp = new Date().toISOString();
-            console.log(`[WebRtcService][${timestamp}] ICE connection state with ${participantId}: ${pc.iceConnectionState} - Match/Session ID: ${this.currentRoomId}`);
-
             const wasPreviouslyConnected = this.wasConnected.get(participantId) || false;
             const isNowConnected = pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed';
 
@@ -474,73 +604,41 @@ export class WebRtcService {
                 if (!wasPreviouslyConnected) {
                     this.wasConnected.set(participantId, true);
                 }
-            } else if (!isNowConnected && wasPreviouslyConnected) {
-                // Was connected, now disconnected - mark as reconnecting
-                import('@/store/useCallStore').then(module => {
+                import('@/store/useCallStore').then((module) => {
+                    module.useCallStore.getState().updateParticipantConnectionState(participantId, pc.iceConnectionState);
+                });
+            } else if (wasPreviouslyConnected && pc.iceConnectionState === 'disconnected') {
+                import('@/store/useCallStore').then((module) => {
                     module.useCallStore.getState().updateParticipantConnectionState(participantId, 'reconnecting');
+                });
+            } else {
+                import('@/store/useCallStore').then((module) => {
+                    module.useCallStore.getState().updateParticipantConnectionState(participantId, pc.iceConnectionState);
                 });
             }
 
-            // Perbarui state di store (gunakan dinamis import atau event emitter)
-            import('@/store/useCallStore').then(module => {
-                module.useCallStore.getState().updateParticipantConnectionState(participantId, pc.iceConnectionState);
-            });
-
-            // Auto ICE restart jika iceConnectionState failed
             if (pc.iceConnectionState === 'failed') {
                 const restarts = this.iceRestarts.get(participantId) || 0;
                 if (restarts < 3) {
                     this.iceRestarts.set(participantId, restarts + 1);
-                    console.log(`[WebRtcService][${timestamp}] Triggering ICE restart (attempt ${restarts + 1}/3) for ${participantId} due to failed ICE.`);
-                    import('@/store/useCallStore').then(module => {
+                    import('@/store/useCallStore').then((module) => {
                         module.useCallStore.getState().updateParticipantConnectionState(participantId, 'ice-restarting');
                     });
                     try {
                         pc.restartIce();
-                        this.forceRenegotiate(participantId);
-                    } catch (e) {
-                        console.error('[WebRtcService] restartIce error:', e);
+                        void this.forceRenegotiate(participantId);
+                    } catch {
+                        // ignore
                     }
                 }
             }
         };
 
-        // Role-based negotiation - We wait for 'peer-ready' from signaling server
-        // pc.onnegotiationneeded = async () => { ... } is removed to avoid glare/collisions.
-        
-        // Alat diagnostik tingkat lanjut untuk ICE
-        (pc as any).onicecandidateerror = (event: any) => {
-            console.error('[ICE ERROR]', JSON.stringify({ 
-                url: event.url, 
-                errorCode: event.errorCode, 
-                errorText: event.errorText 
-            }));
-        };
-
         pc.onconnectionstatechange = () => {
-            const timestamp = new Date().toISOString();
-            console.log(`[WebRtcService][${timestamp}] Connection state with ${participantId}: ${pc.connectionState} - Match/Session ID: ${this.currentRoomId}`);
-            if (pc.connectionState === 'failed' as any) {
-                console.warn(`[WebRtcService][${timestamp}] Connection state failed for ${participantId} (ICE restart handled by oniceconnectionstatechange).`);
-            } else if (pc.connectionState === 'connected') {
-                // Start periodic stats polling
+            if (pc.connectionState === 'connected') {
                 this.startStatsPolling(participantId, pc);
-
-                // Log initial ICE pair info
-                pc.getStats().then(stats => {
-                    stats.forEach(report => {
-                        if (report.type === 'transport' && report.selectedCandidatePairId) {
-                            const pair = stats.get(report.selectedCandidatePairId);
-                            if (pair) {
-                                const local = stats.get(pair.localCandidateId);
-                                const remote = stats.get(pair.remoteCandidateId);
-                                console.log(`[WebRtcService][${timestamp}] Selected ICE Pair for ${participantId}: Local(${local?.candidateType}) -> Remote(${remote?.candidateType})`);
-                            }
-                        }
-                    });
-                });
-            } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'closed') {
-                // Stop stats polling when connection is not connected
+                void this.updateAllPeerBitrates();
+            } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'closed' || pc.connectionState === 'failed') {
                 this.stopStatsPolling(participantId);
             }
         };
@@ -550,96 +648,98 @@ export class WebRtcService {
     }
 
     private async handleOffer(offer: RTCSessionDescriptionInit, sender: string) {
-        const timestamp = new Date().toISOString();
-        console.log(`[WebRtcService][${timestamp}] Handling offer from: ${sender} - Match/Session ID: ${this.currentRoomId}`);
         const pc = this.getPeerConnection(sender);
+        const polite = this.isPolite(sender);
+        const readyForOffer =
+            !this.makingOffer.get(sender) &&
+            (pc.signalingState === 'stable' || Boolean(this.isSettingRemoteAnswerPending.get(sender)));
+        const offerCollision = !readyForOffer;
+        const ignore = !polite && offerCollision;
+
+        this.ignoreOffer.set(sender, ignore);
+        if (ignore) {
+            return;
+        }
 
         try {
-            console.log(`[WebRtcService][${timestamp}] setRemoteDescription(offer) starting for ${sender}`);
-            await pc.setRemoteDescription(new RTCSessionDescription(offer));
-            console.log(`[WebRtcService][${timestamp}] setRemoteDescription(offer) success for ${sender}`);
+            if (offerCollision && pc.signalingState !== 'stable') {
+                await Promise.all([
+                    pc.setLocalDescription({ type: 'rollback' }),
+                    pc.setRemoteDescription(new RTCSessionDescription(offer)),
+                ]);
+            } else {
+                await pc.setRemoteDescription(new RTCSessionDescription(offer));
+            }
 
-            // Unconditionally bind receivers after parsing the remote description
             this.forceBindReceivers(sender, pc);
 
-            // For the Answerer, transceivers were just created by setRemoteDescription.
-            // We must now strictly attach our local media to them to prevent browser bugs
-            // where addTrack creates duplicate silent transceivers.
             if (this.localStream) {
                 const transceivers = pc.getTransceivers();
-                this.localStream.getTracks().forEach(track => {
-                    const emptyTransceiver = transceivers.find(t => 
-                        t.receiver.track.kind === track.kind && t.sender.track === null
+                this.localStream.getTracks().forEach((track) => {
+                    const emptyTransceiver = transceivers.find(
+                        (t) => t.receiver?.track?.kind === track.kind && t.sender.track === null
                     );
                     if (emptyTransceiver) {
-                        emptyTransceiver.sender.replaceTrack(track);
+                        void emptyTransceiver.sender.replaceTrack(track);
                         if (emptyTransceiver.direction === 'recvonly') {
                             emptyTransceiver.direction = 'sendrecv';
                         }
-                    } else {
+                    } else if (!transceivers.some((t) => t.sender.track?.kind === track.kind)) {
                         pc.addTrack(track, this.localStream!);
                     }
                 });
             }
 
-            // Flush pending ICE candidates
             await this.flushPendingIceCandidates(sender, pc);
 
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
-            
-            console.log(`[WebRtcService][${timestamp}] setLocalDescription(answer) success for ${sender}`);
+
             this.sendSignalingMessage({
                 type: 'answer',
                 answer: pc.localDescription,
                 targetId: sender,
             });
+            void this.applyAdaptiveVideoParameters(sender, pc);
         } catch (err) {
-            console.error(`[WebRtcService][${timestamp}] Error handling offer from ${sender}:`, err);
+            console.error(`[WebRtcService] Error handling offer from ${sender}:`, err);
         }
     }
 
     private async handleAnswer(answer: RTCSessionDescriptionInit, sender: string) {
-        const timestamp = new Date().toISOString();
-        console.log(`[WebRtcService][${timestamp}] Handling answer from: ${sender} - Match/Session ID: ${this.currentRoomId}`);
         const pc = this.peerConnections.get(sender);
-        if (pc) {
-            try {
-                console.log(`[WebRtcService][${timestamp}] setRemoteDescription(answer) starting for ${sender}`);
-                await pc.setRemoteDescription(new RTCSessionDescription(answer));
-                console.log(`[WebRtcService][${timestamp}] setRemoteDescription(answer) success for ${sender}`);
-
-                // Unconditionally bind receivers after parsing the remote description
-                this.forceBindReceivers(sender, pc);
-
-                // Flush pending ICE candidates
-                await this.flushPendingIceCandidates(sender, pc);
-            } catch (err) {
-                console.error(`[WebRtcService][${timestamp}] Error handling answer from ${sender}:`, err);
-            }
+        if (!pc) return;
+        try {
+            this.isSettingRemoteAnswerPending.set(sender, true);
+            await pc.setRemoteDescription(new RTCSessionDescription(answer));
+            this.forceBindReceivers(sender, pc);
+            await this.flushPendingIceCandidates(sender, pc);
+        } catch (err) {
+            console.error(`[WebRtcService] Error handling answer from ${sender}:`, err);
+        } finally {
+            this.isSettingRemoteAnswerPending.set(sender, false);
         }
     }
 
     private forceBindReceivers(participantId: string, pc: RTCPeerConnection) {
-        const tracks = pc.getReceivers().map(r => r.track);
+        const tracks = pc.getReceivers().map((r) => r.track);
         if (tracks.length === 0) return;
-        
-        console.log(`[WebRtcService] Force binding ${tracks.length} receivers for ${participantId}`);
+
         let stream = this.remoteStreams.get(participantId);
         let changed = false;
-        
+
         if (!stream) {
             stream = new MediaStream();
             changed = true;
         }
-        
-        tracks.forEach(track => {
+
+        tracks.forEach((track) => {
             if (track && !stream!.getTracks().includes(track)) {
                 stream!.addTrack(track);
                 changed = true;
             }
         });
-        
+
         if (changed) {
             this.remoteStreams.set(participantId, stream);
             if (this.onRemoteStreamCallback) {
@@ -651,13 +751,11 @@ export class WebRtcService {
     private async flushPendingIceCandidates(sender: string, pc: RTCPeerConnection) {
         const pending = this.pendingCandidates.get(sender);
         if (pending && pending.length > 0) {
-            const timestamp = new Date().toISOString();
-            console.log(`[WebRtcService][${timestamp}] Flushing ${pending.length} pending ICE candidates for ${sender}`);
             for (const c of pending) {
                 try {
                     await pc.addIceCandidate(new RTCIceCandidate(c));
-                } catch (err) {
-                    console.error(`[WebRtcService][${timestamp}] Error adding buffered ice candidate for ${sender}:`, err);
+                } catch {
+                    // ignore invalid candidate
                 }
             }
             this.pendingCandidates.delete(sender);
@@ -665,22 +763,20 @@ export class WebRtcService {
     }
 
     private async handleIceCandidate(candidate: RTCIceCandidateInit, sender: string) {
-        const timestamp = new Date().toISOString();
+        if (this.ignoreOffer.get(sender)) {
+            return;
+        }
         const pc = this.getPeerConnection(sender);
-        if (pc) {
-            if (pc.remoteDescription) {
-                try {
-                    await pc.addIceCandidate(new RTCIceCandidate(candidate));
-                    console.log(`[WebRtcService][${timestamp}] ICE candidate added for ${sender}`);
-                } catch (err) {
-                    console.error(`[WebRtcService][${timestamp}] Error adding ice candidate for ${sender}:`, err);
-                }
-            } else {
-                console.log(`[WebRtcService][${timestamp}] Buffering ICE candidate for ${sender} (remote description not set yet)`);
-                let pending = this.pendingCandidates.get(sender) || [];
-                pending.push(candidate);
-                this.pendingCandidates.set(sender, pending);
+        if (pc.remoteDescription) {
+            try {
+                await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch {
+                // ignore
             }
+        } else {
+            const pending = this.pendingCandidates.get(sender) || [];
+            pending.push(candidate);
+            this.pendingCandidates.set(sender, pending);
         }
     }
 
@@ -690,13 +786,23 @@ export class WebRtcService {
         }
     }
 
+    private clearPeerHandlers(pc: RTCPeerConnection) {
+        pc.ontrack = null;
+        pc.onicecandidate = null;
+        pc.oniceconnectionstatechange = null;
+        pc.onconnectionstatechange = null;
+        pc.onsignalingstatechange = null;
+        (pc as any).onicecandidateerror = null;
+    }
+
     public disconnectPeer(participantId: string): void {
-        const timestamp = new Date().toISOString();
         const pc = this.peerConnections.get(participantId);
         if (pc) {
-            console.log(`[WebRtcService][${timestamp}] Closing peer connection with: ${participantId} - Match/Session ID: ${this.currentRoomId}`);
             this.stopStatsPolling(participantId);
             this.wasConnected.delete(participantId);
+            this.prevStats.delete(participantId);
+            this.peerIsRelay.delete(participantId);
+            this.clearPeerHandlers(pc);
             pc.close();
             this.peerConnections.delete(participantId);
             this.makingOffer.delete(participantId);
@@ -705,21 +811,19 @@ export class WebRtcService {
             this.pendingCandidates.delete(participantId);
             this.remoteStreams.delete(participantId);
             this.iceRestarts.delete(participantId);
-            console.log(`[WebRtcService][${timestamp}] Closed peer connection with: ${participantId}`);
+            void this.updateAllPeerBitrates();
         }
     }
 
     public leaveCurrentRoom(): void {
-        const timestamp = new Date().toISOString();
         if (this.currentRoomId) {
             this.sendSignalingMessage({ type: 'leave' });
         }
 
         this.peerConnections.forEach((pc, id) => {
-            console.log(`[WebRtcService][${timestamp}] Closing peer connection with: ${id} - Match/Session ID: ${this.currentRoomId}`);
             this.stopStatsPolling(id);
+            this.clearPeerHandlers(pc);
             pc.close();
-            console.log(`[WebRtcService][${timestamp}] Disconnected ${id}`);
         });
         this.peerConnections.clear();
         this.makingOffer.clear();
@@ -729,21 +833,23 @@ export class WebRtcService {
         this.remoteStreams.clear();
         this.iceRestarts.clear();
         this.statsPollingIntervals.clear();
+        this.prevStats.clear();
+        this.peerIsRelay.clear();
         this.wasConnected.clear();
         this.currentRoomId = null;
-        this.pendingUserJoins = [];
+        this.signalingToken = null;
     }
 
     public disconnectAll(): void {
+        this.shouldReconnectSignaling = false;
+        this.clearSignalingReconnectTimer();
         this.leaveCurrentRoom();
 
         if (this.signalingSocket) {
+            this.signalingSocket.onclose = null;
             this.signalingSocket.close();
             this.signalingSocket = null;
             this.signalingConnectPromise = null;
         }
     }
 }
-
-
-

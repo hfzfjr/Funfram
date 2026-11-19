@@ -1,69 +1,53 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { ApiService } from '@/services/api.service';
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import FloatingBackgroundIcons from '@/components/ui/background/FloatingBackgroundIcons';
 
-export default function JoinFrameClient() {
+interface JoinFrameClientProps {
+    validatedFrameId: string;
+    inviteToken: string;
+}
+
+export default function JoinFrameClient({ validatedFrameId, inviteToken }: JoinFrameClientProps) {
     const router = useRouter();
-    const searchParams = useSearchParams();
     const [username, setUsername] = useState('');
+    const [acceptedTerms, setAcceptedTerms] = useState(false);
     const [isChecking, setIsChecking] = useState(false);
     const [error, setError] = useState<string | null>(null);
-
-    const invitePayload = useMemo(() => {
-        return {
-            invite: searchParams.get('invite') || '',
-            frameId: searchParams.get('frameId') || '',
-            sessionId: searchParams.get('sessionId') || '',
-            expire: searchParams.get('expire') || '',
-            nonce: searchParams.get('nonce') || '',
-        };
-    }, [searchParams]);
 
     useEffect(() => {
         const savedUsername = localStorage.getItem('funfram_username');
         if (savedUsername) {
-            setUsername(savedUsername);
+            setUsername(savedUsername.slice(0, 24));
+        }
+        if (localStorage.getItem('funfram_age_consent_at')) {
+            setAcceptedTerms(true);
         }
     }, []);
 
     const handleJoin = async () => {
         setError(null);
-        const trimmedUsername = username.trim();
+        const trimmedUsername = username.trim().slice(0, 24);
         if (!trimmedUsername) {
-            setError('Masukkan username dulu.');
+            setError('Masukkan nama tampilan terlebih dahulu.');
             return;
         }
-
-        if (!invitePayload.invite || !invitePayload.frameId || !invitePayload.expire || !invitePayload.nonce) {
-            setError('Link undangan tidak lengkap.');
+        if (!acceptedTerms) {
+            setError('Anda wajib menyetujui syarat usia 18+ dan Ketentuan Layanan.');
             return;
         }
+        localStorage.setItem('funfram_age_consent_at', new Date().toISOString());
 
         try {
             setIsChecking(true);
-            const api = ApiService.getInstance();
-            const verification = await api.verifyInviteLink(
-                invitePayload.frameId,
-                invitePayload.sessionId || 'no-session',
-                invitePayload.expire,
-                invitePayload.nonce,
-                invitePayload.invite,
-            );
-
-            if (!verification.isValid) {
-                setError('Undangan sudah tidak valid atau kedaluwarsa.');
-                return;
-            }
-
             localStorage.setItem('funfram_username', trimmedUsername);
             sessionStorage.setItem('funfram_autostart', '1');
 
             const { useCallStore } = await import('@/store/useCallStore');
             useCallStore.getState().setLocalUser({
-                id: crypto.randomUUID(),
+                id: 'pending',
                 stream: null,
                 name: trimmedUsername,
                 isMuted: false,
@@ -74,11 +58,9 @@ export default function JoinFrameClient() {
             });
 
             const nextParams = new URLSearchParams({
-                invite: invitePayload.invite,
-                frameId: invitePayload.frameId,
-                sessionId: invitePayload.sessionId || 'no-session',
-                expire: invitePayload.expire,
-                nonce: invitePayload.nonce,
+                invite: inviteToken,
+                frameId: validatedFrameId,
+                token: inviteToken,
             });
 
             router.replace(`/?${nextParams.toString()}`);
@@ -107,22 +89,24 @@ export default function JoinFrameClient() {
                 </div>
                 <div className="flex-1 p-8 md:px-12 md:py-14 flex flex-col justify-center">
                     <h1 className="text-[1.75rem] md:text-[2.2rem] font-extrabold text-slate-900 m-0 mb-2 tracking-[-0.02em]">
-                        Join <span className="text-sky-500">FunFram</span>
+                        Gabung <span className="text-sky-500">FunFram</span>
                     </h1>
-                    <p className="text-slate-500 text-base m-0 mb-8">Enter your username to join your friend&apos;s frame!</p>
+                    <p className="text-slate-500 text-base m-0 mb-6">Masukkan nama kamu untuk bergabung ke frame teman!</p>
 
-                    <div className="flex flex-col gap-6">
+                    <div className="flex flex-col gap-5">
                         <div>
-                            <label className="block text-slate-700 font-semibold mb-2 text-[0.9rem]">Username</label>
+                            <label htmlFor="join-username-input" className="block text-slate-700 font-semibold mb-2 text-[0.9rem]">Nama Tampilan</label>
                             <input
+                                id="join-username-input"
                                 type="text"
+                                maxLength={24}
                                 value={username}
                                 onChange={(e) => setUsername(e.target.value)}
-                                placeholder="Enter your username..."
+                                placeholder="Masukkan nama kamu..."
                                 className="w-full bg-slate-50 text-slate-900 px-5 py-4 rounded-xl border border-slate-200 text-base transition-all duration-200 focus:border-sky-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-500/10"
                                 disabled={isChecking}
                                 onKeyDown={(e) => {
-                                    if (e.key === 'Enter' && username.trim() && !isChecking) {
+                                    if (e.key === 'Enter' && username.trim() && acceptedTerms && !isChecking) {
                                         handleJoin();
                                     }
                                 }}
@@ -134,16 +118,36 @@ export default function JoinFrameClient() {
                             )}
                         </div>
 
+                        <label className="flex items-start gap-3 text-xs text-slate-600 cursor-pointer select-none leading-relaxed">
+                            <input
+                                type="checkbox"
+                                checked={acceptedTerms}
+                                onChange={(e) => setAcceptedTerms(e.target.checked)}
+                                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-sky-500 focus:ring-sky-500"
+                            />
+                            <span>
+                                Saya berusia <strong>18 tahun ke atas</strong> dan menyetujui{' '}
+                                <Link href="/legal/terms" target="_blank" className="text-sky-600 font-semibold hover:underline">
+                                    Syarat &amp; Ketentuan
+                                </Link>{' '}
+                                serta{' '}
+                                <Link href="/legal/privacy" target="_blank" className="text-sky-600 font-semibold hover:underline">
+                                    Kebijakan Privasi
+                                </Link>
+                                .
+                            </span>
+                        </label>
+
                         <button
                             onClick={handleJoin}
-                            disabled={!username.trim() || isChecking}
-                            className={`w-full font-bold text-base p-4 rounded-xl transition-all duration-200 border-none mt-2 ${
-                                username.trim() && !isChecking
+                            disabled={!username.trim() || !acceptedTerms || isChecking}
+                            className={`w-full font-bold text-base p-4 rounded-xl transition-all duration-200 border-none mt-1 ${
+                                username.trim() && acceptedTerms && !isChecking
                                     ? 'bg-gradient-to-br from-sky-500 to-blue-500 hover:from-sky-600 hover:to-blue-600 text-white shadow-[0_10px_15px_-3px_rgba(14,165,233,0.3)] hover:shadow-[0_10px_20px_-3px_rgba(14,165,233,0.4)] cursor-pointer active:scale-[0.98]'
                                     : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                             }`}
                         >
-                            {isChecking ? 'Memeriksa...' : 'Join Frame'}
+                            {isChecking ? 'Memeriksa...' : 'Gabung Frame'}
                         </button>
                     </div>
                 </div>

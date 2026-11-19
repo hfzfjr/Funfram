@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+.npm-cache/
 .pnp
 .pnp.js
 
@@ -23,11 +24,8 @@ yarn-error.log*
 *.pem
 
 # Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env*
+!.env.example
 
 # Vercel
 .vercel
@@ -45,9 +43,6 @@ next-env.d.ts
 *.test
 *.out
 go.work
-
-# Docker
-.dockerignore
 
 # IDE
 .vscode/

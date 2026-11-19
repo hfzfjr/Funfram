@@ -1,29 +1,54 @@
-# Local development only (production uses 3 separate Dockerfile resources in Coolify)
-version: '3.8'
-
+# Local & Home Server Coolify stack ($0/month architecture)
 services:
-  # Frontend - Next.js
-  frontend-nextjs:
-    build:
-      context: ./apps/frontend-nextjs
-      dockerfile: Dockerfile
-    ports:
-      - "3001:3000"
-    environment:
-      - NODE_ENV=production
-      - NEXT_PUBLIC_WS_GAME_URL=${NEXT_PUBLIC_WS_GAME_URL}
-      - NEXT_PUBLIC_WS_WEBRTC_URL=${NEXT_PUBLIC_WS_WEBRTC_URL}
-      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
-      - CLOUDFLARE_TURN_KEY_ID=${CLOUDFLARE_TURN_KEY_ID}
-      - CLOUDFLARE_TURN_API_TOKEN=${CLOUDFLARE_TURN_API_TOKEN}
-    depends_on:
-      - backend-websockets
-      - backend-webrtc
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
     networks:
       - funfram-network
     restart: unless-stopped
 
-  # Backend - WebSocket Server (Go)
+  frontend-nextjs:
+    build:
+      context: ./apps/frontend-nextjs
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_WS_GAME_URL: ${NEXT_PUBLIC_WS_GAME_URL:-ws://localhost:5001}
+        NEXT_PUBLIC_WS_WEBRTC_URL: ${NEXT_PUBLIC_WS_WEBRTC_URL:-ws://localhost:5002}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3001}
+    ports:
+      - "3001:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_WS_GAME_URL=${NEXT_PUBLIC_WS_GAME_URL:-ws://localhost:5001}
+      - NEXT_PUBLIC_WS_WEBRTC_URL=${NEXT_PUBLIC_WS_WEBRTC_URL:-ws://localhost:5002}
+      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3001}
+      - WS_INTERNAL_URL=http://backend-websockets:5001
+      - CLOUDFLARE_TURN_KEY_ID=${CLOUDFLARE_TURN_KEY_ID:-}
+      - CLOUDFLARE_TURN_API_TOKEN=${CLOUDFLARE_TURN_API_TOKEN:-}
+      - TURN_TOKEN_HMAC_SECRET=${TURN_TOKEN_HMAC_SECRET:-}
+      - SIGNALING_HMAC_SECRET=${SIGNALING_HMAC_SECRET:-}
+      - INVITE_HMAC_SECRET=${INVITE_HMAC_SECRET:-}
+    depends_on:
+      backend-websockets:
+        condition: service_healthy
+      backend-webrtc:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - funfram-network
+    restart: unless-stopped
+
   backend-websockets:
     build:
       context: ./apps/backend-websockets
@@ -32,12 +57,25 @@ services:
       - "5001:5001"
     environment:
       - PORT=5001
+      - APP_ENV=${APP_ENV:-production}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3001,http://localhost:3000}
       - DATABASE_URL=${DATABASE_URL:-}
+      - REDIS_URL=redis://redis:6379
+      - SIGNALING_HMAC_SECRET=${SIGNALING_HMAC_SECRET:-}
+      - TURN_TOKEN_HMAC_SECRET=${TURN_TOKEN_HMAC_SECRET:-}
+      - INVITE_HMAC_SECRET=${INVITE_HMAC_SECRET:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5001/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     networks:
       - funfram-network
     restart: unless-stopped
 
-  # Backend - WebRTC Signaling Server (Node.js)
   backend-webrtc:
     build:
       context: ./apps/backend-webrtc
@@ -46,14 +84,22 @@ services:
       - "5002:5002"
     environment:
       - PORT=5002
-      - METERED_DOMAIN=${METERED_DOMAIN:-}
-      - METERED_API_KEY=${METERED_API_KEY:-}
+      - APP_ENV=${APP_ENV:-production}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3001,http://localhost:3000}
+      - SIGNALING_HMAC_SECRET=${SIGNALING_HMAC_SECRET:-}
+      - TURN_TOKEN_HMAC_SECRET=${TURN_TOKEN_HMAC_SECRET:-}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5002/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     networks:
       - funfram-network
     restart: unless-stopped
 
+volumes:
+  redis-data:
+
 networks:
   funfram-network:
     driver: bridge
-
-

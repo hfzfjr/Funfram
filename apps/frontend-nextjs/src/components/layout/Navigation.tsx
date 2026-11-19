@@ -17,18 +17,14 @@ interface NavigationProps {
   onLeave?: () => void;
   onReturnToLobby?: () => void;
   onMic?: () => void;
-  onCam?: () => void;
   isMicOn?: boolean;
-  isCamOn?: boolean;
 }
 
 export default function Navigation({
   onLeave,
   onReturnToLobby,
   onMic,
-  onCam,
   isMicOn = true,
-  isCamOn = true
 }: NavigationProps) {
   const [showSidebar, setShowSidebar] = useState(false);
   const [showGameModal, setShowGameModal] = useState(false);
@@ -71,6 +67,16 @@ export default function Navigation({
         return;
       }
 
+      const storeState = useCallStore.getState();
+      if (storeState.customAlert?.visible) {
+        storeState.hideCustomAlert();
+        return;
+      }
+      if (storeState.gameInvite) {
+        storeState.declineGameInvite();
+        return;
+      }
+
       if (showSidebar || showGameModal || showInviteOverlay) {
         setShowSidebar(false);
         setShowGameModal(false);
@@ -79,7 +85,7 @@ export default function Navigation({
       }
 
       if (isOwner && (fsmState === 'FRAME' || fsmState === 'MATCHED')) {
-        useCallStore.getState().triggerNextFrame();
+        storeState.triggerNextFrame();
       }
     };
 
@@ -96,23 +102,17 @@ export default function Navigation({
     setShowSidebar(false);
   };
 
-  // Determine label for the start/next button
-  let nextButtonText = "Next Frame";
-  // Owner‑only controls – button disabled when not owner or during searching
-  const nextButtonDisabled = !isOwner; // Owner can always click
+  let nextButtonText = "Lanjut Frame";
+  const nextButtonDisabled = !isOwner;
 
-
-  // Adjust button label based on FSM state to match original UI expectations
   if (fsmState === 'MATCHED') {
-    nextButtonText = "Next Frame";
+    nextButtonText = "Lanjut Frame";
   } else if (fsmState === 'FRAME') {
-    nextButtonText = "Start Frame";
+    nextButtonText = "Mulai Cari";
   } else if (fsmState === 'SEARCHING') {
-    nextButtonText = "Searching...";
+    nextButtonText = "Mencari...";
   }
 
-
-  // Determine game button visibility and disabled status
   const showGameButton = fsmState === 'MATCHED';
   const gameButtonDisabled = !isOwner;
 
@@ -121,7 +121,7 @@ export default function Navigation({
   const hasGame = isOwner && showGameButton;
   const hasInvite = isOwner && fsmState === 'FRAME';
   const buttonCount =
-    3 + // Leave + Microphone + Chat
+    3 + // Leave + Microphone + Chat (kamera wajib nyala)
     (hasNext ? 1 : 0) +
     (hasReturnToLobby ? 1 : 0) +
     (hasGame ? 1 : 0) +

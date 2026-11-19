@@ -1,0 +1,55 @@
+name: Funfram CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  backend-go:
+    name: Go WebSocket Hub (Vet & Race Tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/backend-websockets
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: Run go vet
+        run: go vet ./...
+      - name: Run unit & integration tests with race detector
+        run: go test -race -count=1 ./...
+      - name: Build binary
+        run: go build ./...
+
+  backend-webrtc:
+    name: Node.js WebRTC Signaling
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/backend-webrtc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      - run: node --check server.js
+
+  frontend-nextjs:
+    name: Next.js 16 Frontend (Lint & Build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/frontend-nextjs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build

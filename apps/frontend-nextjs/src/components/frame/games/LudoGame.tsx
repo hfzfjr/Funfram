@@ -62,39 +62,40 @@ const BLUE_HOME_COORDS: [number, number][] = [[6, 6], [5, 5], [4, 4], [4, 3]];
 export default function LudoGame() {
   const sessionId = useCallStore((s) => s.sessionId);
   const localUser = useCallStore((s) => s.localUser);
-  const leftParticipants = useCallStore((s) => s.leftParticipants);
-  const rightParticipants = useCallStore((s) => s.rightParticipants);
+  const localFrameRole = useCallStore((s) => s.localFrameRole);
 
   const [ludo, setLudo] = useState<LudoState>(INITIAL_LUDO);
 
   const myColor: LudoColor | null = useMemo(() => {
     if (!localUser) return null;
-    if (leftParticipants.some((p) => p.id === localUser.id)) return 'red';
-    if (rightParticipants.some((p) => p.id === localUser.id)) return 'blue';
-    return null;
-  }, [localUser, leftParticipants, rightParticipants]);
+    return localFrameRole === 'A' ? 'red' : 'blue';
+  }, [localUser, localFrameRole]);
 
   useEffect(() => {
     const ws = WebSocketService.getInstance();
     const handleAction = (payload: any) => {
       if (payload?.game !== 'ludo') return;
       if (payload.action === 'SYNC' && payload.state) {
-        setLudo(payload.state);
+        const st = payload.state;
+        if (st.tokens) {
+          setLudo(st);
+        } else {
+          setLudo({
+            tokens: {
+              red: Array.isArray(st.red) ? st.red : [-1, -1, -1, -1],
+              blue: Array.isArray(st.blue) ? st.blue : [-1, -1, -1, -1],
+            },
+            turn: st.turn || 'red',
+            dice: typeof st.dice === 'number' ? st.dice : null,
+            winner: st.winner ?? null,
+            message: st.statusMsg || '',
+          });
+        }
       }
     };
     ws.on('GAME_ACTION', handleAction);
     return () => ws.off('GAME_ACTION', handleAction);
   }, []);
-
-  const syncLudo = (next: LudoState) => {
-    setLudo(next);
-    WebSocketService.getInstance().sendEvent('GAME_ACTION', {
-      game: 'ludo',
-      action: 'SYNC',
-      sessionId,
-      state: next,
-    });
-  };
 
   const canMoveToken = (pos: number, dice: number) => {
     if (pos === -1) return dice === 6;
@@ -105,74 +106,22 @@ export default function LudoGame() {
 
   const handleRollDice = () => {
     if (!isMyTurn || ludo.dice !== null) return;
-    const roll = Math.floor(Math.random() * 6) + 1;
-    const myTokens = ludo.tokens[ludo.turn];
-    const hasValidMove = myTokens.some((pos) => canMoveToken(pos, roll));
-
-    if (!hasValidMove) {
-      const nextTurn: LudoColor = ludo.turn === 'red' ? 'blue' : 'red';
-      syncLudo({
-        ...ludo,
-        dice: null,
-        turn: nextTurn,
-        message: `${ludo.turn === 'red' ? 'Merah' : 'Biru'} lempar ${roll} (tidak ada langkah) → Giliran ${nextTurn === 'red' ? 'Merah' : 'Biru'}`,
-      });
-      return;
-    }
-
-    syncLudo({
-      ...ludo,
-      dice: roll,
-      message: `${ludo.turn === 'red' ? 'Merah' : 'Biru'} dapat angka ${roll}! Pilih bidak.`,
+    WebSocketService.getInstance().sendEvent('GAME_ACTION', {
+      game: 'ludo',
+      action: 'ROLL',
+      sessionId,
     });
   };
 
   const handleMoveToken = (idx: number) => {
     if (!isMyTurn || ludo.dice === null) return;
-    const dice = ludo.dice;
-    const color = ludo.turn;
-    const pos = ludo.tokens[color][idx];
-    if (!canMoveToken(pos, dice)) return;
-
-    const newPos = pos === -1 ? 0 : pos + dice;
-    const nextTokens = {
-      red: [...ludo.tokens.red],
-      blue: [...ludo.tokens.blue],
-    };
-    nextTokens[color][idx] = newPos;
-
-    // Capture opponent if landing on non-safe outer tile
-    let captured = false;
-    if (newPos >= 0 && newPos < TRACK_LEN) {
-      const globalTarget = toGlobalIndex(color, newPos);
-      if (!SAFE_CELLS.has(globalTarget)) {
-        const opp: LudoColor = color === 'red' ? 'blue' : 'red';
-        nextTokens[opp] = nextTokens[opp].map((oppPos) => {
-          if (oppPos >= 0 && oppPos < TRACK_LEN && toGlobalIndex(opp, oppPos) === globalTarget) {
-            captured = true;
-            return -1;
-          }
-          return oppPos;
-        });
-      }
-    }
-
-    const won = nextTokens[color].every((p) => p === FINISH_POS);
-    const bonusTurn = dice === 6 || captured;
-    const nextTurn: LudoColor = won ? color : bonusTurn ? color : color === 'red' ? 'blue' : 'red';
-
-    syncLudo({
-      tokens: nextTokens,
-      turn: nextTurn,
-      dice: null,
-      winner: won ? color : null,
-      message: won
-        ? `🏆 ${color === 'red' ? 'Merah' : 'Biru'} MENANG!`
-        : captured
-        ? `💥 ${color === 'red' ? 'Merah' : 'Biru'} memakan bidak lawan! Bonus lempar!`
-        : dice === 6
-        ? `🎲 Dapat 6! ${color === 'red' ? 'Merah' : 'Biru'} lempar lagi!`
-        : `Giliran ${nextTurn === 'red' ? 'Merah' : 'Biru'}`,
+    const pos = ludo.tokens[ludo.turn][idx];
+    if (!canMoveToken(pos, ludo.dice)) return;
+    WebSocketService.getInstance().sendEvent('GAME_ACTION', {
+      game: 'ludo',
+      action: 'MOVE',
+      tokenIndex: idx,
+      sessionId,
     });
   };
 
@@ -190,20 +139,22 @@ export default function LudoGame() {
             Anda: <strong>{myColor === 'red' ? 'Merah (Kiri)' : myColor === 'blue' ? 'Biru (Kanan)' : 'Penonton'}</strong>
           </div>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => syncLudo(INITIAL_LUDO)}
-            className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold cursor-pointer text-slate-900 hover:bg-slate-50 transition-colors"
-          >
-            Reset
-          </button>
-          <button
-            onClick={handleStopGame}
-            className="px-3 py-1.5 rounded-lg border-none bg-red-600 hover:bg-red-700 text-white font-semibold cursor-pointer transition-colors"
-          >
-            Stop Game
-          </button>
-        </div>
+        {localUser?.isOwner && (
+          <div className="flex gap-2">
+            <button
+              onClick={() => WebSocketService.getInstance().sendEvent('GAME_ACTION', { game: 'ludo', action: 'RESET', sessionId })}
+              className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white font-semibold cursor-pointer text-slate-900 hover:bg-slate-50 transition-colors"
+            >
+              Reset
+            </button>
+            <button
+              onClick={handleStopGame}
+              className="px-3 py-1.5 rounded-lg border-none bg-red-600 hover:bg-red-700 text-white font-semibold cursor-pointer transition-colors"
+            >
+              Stop Game
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 8x8 Ludo Grid */}

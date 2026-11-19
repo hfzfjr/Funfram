@@ -1,17 +1,12 @@
--- Funfram.com Database Schema for Supabase
--- This file contains all tables and initial setup for the application
-
--- Enable UUID extension
+-- Funfram Database Schema for PostgreSQL / Supabase (Idempotent)
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Users table
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     username VARCHAR(50) UNIQUE NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Lobbies table
 CREATE TABLE IF NOT EXISTS lobbies (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     owner_id UUID REFERENCES users(id) ON DELETE CASCADE,
@@ -22,7 +17,6 @@ CREATE TABLE IF NOT EXISTS lobbies (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Lobby members table
 CREATE TABLE IF NOT EXISTS lobby_members (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     lobby_id UUID REFERENCES lobbies(id) ON DELETE CASCADE,
@@ -31,7 +25,6 @@ CREATE TABLE IF NOT EXISTS lobby_members (
     UNIQUE(lobby_id, user_id)
 );
 
--- Matches table
 CREATE TABLE IF NOT EXISTS matches (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     lobby_a UUID REFERENCES lobbies(id) ON DELETE SET NULL,
@@ -40,7 +33,6 @@ CREATE TABLE IF NOT EXISTS matches (
     ended_at TIMESTAMP WITH TIME ZONE
 );
 
--- Leaderboard table
 CREATE TABLE IF NOT EXISTS leaderboard (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
@@ -50,16 +42,14 @@ CREATE TABLE IF NOT EXISTS leaderboard (
     UNIQUE(user_id, game_name)
 );
 
--- User presence tracking
 CREATE TABLE IF NOT EXISTS user_presence (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-    presence_state VARCHAR(16) CHECK (presence_state IN ('ONLINE', 'MATCHING', 'PLAYING', 'IDLE', 'OFFLINE')),
-    session_id UUID REFERENCES matches(id),
+    presence_state VARCHAR(16) CHECK (presence_state IN ('ONLINE', 'MATCHING', 'PLAYING', 'DRAWING', 'GUESSING', 'RECONNECTING', 'IDLE', 'OFFLINE')),
+    session_id UUID REFERENCES matches(id) ON DELETE SET NULL,
     last_heartbeat TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Active sessions for matched frames
 CREATE TABLE IF NOT EXISTS sessions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     frame_a_id UUID NOT NULL REFERENCES lobbies(id) ON DELETE CASCADE,
@@ -70,18 +60,16 @@ CREATE TABLE IF NOT EXISTS sessions (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Device state tracking per session
 CREATE TABLE IF NOT EXISTS user_device_state (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    session_id UUID REFERENCES sessions(id) ON DELETE CASCADE,
+    session_id UUID REFERENCES matches(id) ON DELETE CASCADE,
     camera_enabled BOOLEAN DEFAULT TRUE,
     microphone_enabled BOOLEAN DEFAULT TRUE,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     UNIQUE(user_id, session_id)
 );
 
--- Invite links for shared frames
 CREATE TABLE IF NOT EXISTS invite_links (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     frame_id UUID NOT NULL REFERENCES lobbies(id) ON DELETE CASCADE,
@@ -93,22 +81,43 @@ CREATE TABLE IF NOT EXISTS invite_links (
     times_used INTEGER DEFAULT 0
 );
 
--- Create indexes for better performance
-CREATE INDEX idx_lobbies_invite_code ON lobbies(invite_code);
-CREATE INDEX idx_lobbies_status ON lobbies(status);
-CREATE INDEX idx_lobbies_updated_at ON lobbies(updated_at DESC);
-CREATE INDEX idx_lobby_members_lobby_id ON lobby_members(lobby_id);
-CREATE INDEX idx_lobby_members_user_id ON lobby_members(user_id);
-CREATE INDEX idx_matches_created_at ON matches(created_at);
-CREATE INDEX idx_leaderboard_user_id ON leaderboard(user_id);
-CREATE INDEX idx_leaderboard_game_name ON leaderboard(game_name);
-CREATE INDEX idx_leaderboard_score ON leaderboard(score DESC);
-CREATE INDEX idx_user_presence_state ON user_presence(presence_state);
-CREATE INDEX idx_sessions_created ON sessions(created_at DESC);
-CREATE INDEX idx_user_device_state_session ON user_device_state(session_id);
-CREATE INDEX idx_invite_links_code ON invite_links(invite_code);
+CREATE TABLE IF NOT EXISTS reports (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    reporter_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    target_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    match_id UUID REFERENCES matches(id) ON DELETE SET NULL,
+    reason VARCHAR(64) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
 
--- Function to update updated_at timestamp on leaderboard
+CREATE TABLE IF NOT EXISTS bans (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    ip_hash VARCHAR(64),
+    device_hash VARCHAR(64),
+    reason VARCHAR(128) NOT NULL,
+    expires_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Indexes (idempotent)
+CREATE INDEX IF NOT EXISTS idx_lobbies_invite_code ON lobbies(invite_code);
+CREATE INDEX IF NOT EXISTS idx_lobbies_status ON lobbies(status);
+CREATE INDEX IF NOT EXISTS idx_lobbies_updated_at ON lobbies(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_lobby_members_lobby_id ON lobby_members(lobby_id);
+CREATE INDEX IF NOT EXISTS idx_lobby_members_user_id ON lobby_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_matches_created_at ON matches(created_at);
+CREATE INDEX IF NOT EXISTS idx_leaderboard_user_id ON leaderboard(user_id);
+CREATE INDEX IF NOT EXISTS idx_leaderboard_game_name ON leaderboard(game_name);
+CREATE INDEX IF NOT EXISTS idx_leaderboard_score ON leaderboard(score DESC);
+CREATE INDEX IF NOT EXISTS idx_user_presence_state ON user_presence(presence_state);
+CREATE INDEX IF NOT EXISTS idx_sessions_created ON sessions(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_device_state_session ON user_device_state(session_id);
+CREATE INDEX IF NOT EXISTS idx_invite_links_code ON invite_links(invite_code);
+CREATE INDEX IF NOT EXISTS idx_bans_ip_hash ON bans(ip_hash);
+CREATE INDEX IF NOT EXISTS idx_bans_device_hash ON bans(device_hash);
+
+-- Trigger functions
 CREATE OR REPLACE FUNCTION update_leaderboard_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -117,7 +126,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Trigger to automatically update lobby updated_at
 CREATE OR REPLACE FUNCTION update_lobbies_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -126,46 +134,23 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Trigger to automatically update updated_at
+DROP TRIGGER IF EXISTS trigger_update_leaderboard_updated_at ON leaderboard;
 CREATE TRIGGER trigger_update_leaderboard_updated_at
     BEFORE UPDATE ON leaderboard
     FOR EACH ROW
     EXECUTE FUNCTION update_leaderboard_updated_at();
 
+DROP TRIGGER IF EXISTS trigger_update_lobbies_updated_at ON lobbies;
 CREATE TRIGGER trigger_update_lobbies_updated_at
     BEFORE UPDATE ON lobbies
     FOR EACH ROW
     EXECUTE FUNCTION update_lobbies_updated_at();
 
--- Function to generate unique invite code
-CREATE OR REPLACE FUNCTION generate_invite_code()
-RETURNS VARCHAR(10) AS $$
-DECLARE
-    chars VARCHAR(36) := 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    result VARCHAR(10) := '';
-    i INTEGER;
-BEGIN
-    FOR i IN 1..8 LOOP
-        result := result || SUBSTRING(chars, FLOOR(RANDOM() * LENGTH(chars))::INTEGER + 1, 1);
-    END LOOP;
-    RETURN result;
-END;
-$$ LANGUAGE plpgsql;
-
--- Keep legacy lowercase data compatible with the new enum-like status model.
 UPDATE lobbies SET status = UPPER(status) WHERE status IS NOT NULL;
 ALTER TABLE lobbies DROP CONSTRAINT IF EXISTS lobbies_status_check;
 ALTER TABLE lobbies ADD CONSTRAINT lobbies_status_check
   CHECK (status IN ('WAITING', 'MATCHING', 'MATCHED', 'PLAYING', 'CLOSED'));
 
--- Insert sample data for testing (optional)
--- Uncomment to add sample data
-/*
-INSERT INTO users (username) VALUES 
-    ('user1'),
-    ('user2'),
-    ('user3');
-
-INSERT INTO lobbies (owner_id, invite_code, status) 
-SELECT id, generate_invite_code(), 'waiting' FROM users LIMIT 2;
-*/
+ALTER TABLE user_presence DROP CONSTRAINT IF EXISTS user_presence_presence_state_check;
+ALTER TABLE user_presence ADD CONSTRAINT user_presence_presence_state_check
+  CHECK (presence_state IN ('ONLINE', 'MATCHING', 'PLAYING', 'DRAWING', 'GUESSING', 'RECONNECTING', 'IDLE', 'OFFLINE'));

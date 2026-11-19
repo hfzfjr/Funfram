@@ -1,153 +1,198 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from "next/server";
+import { verifyTurnToken } from "@/lib/turn-auth";
 
-const RATE_LIMIT_WINDOW_MS = 60_000; // 1 menit
-const RATE_LIMIT_MAX_REQUESTS = 15; // Maks 15 request per menit per IP
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_REQUESTS = 15;
+const MAX_RATE_LIMIT_ENTRIES = 10_000;
 const ipRateLimitMap = new Map<string, { count: number; resetAt: number }>();
 
+const NO_STORE_HEADERS = { "Cache-Control": "no-store" } as const;
+
 function getClientIp(request: Request): string {
-    const forwardedFor = request.headers.get('x-forwarded-for');
-    if (forwardedFor) {
-        return forwardedFor.split(',')[0].trim();
+  const cfIp = request.headers.get("cf-connecting-ip")?.trim();
+  if (cfIp) return cfIp;
+
+  const realIp = request.headers.get("x-real-ip")?.trim();
+  if (realIp) return realIp;
+
+  const forwardedFor = request.headers.get("x-forwarded-for");
+  if (forwardedFor) {
+    const parts = forwardedFor
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean);
+    if (parts.length > 0) {
+      return parts[parts.length - 1];
     }
-    return request.headers.get('x-real-ip') || 'unknown';
+  }
+  return "unknown";
 }
 
 function isRateLimited(ip: string): boolean {
-    const now = Date.now();
-    const record = ipRateLimitMap.get(ip);
-
-    if (!record || now > record.resetAt) {
-        ipRateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-        return false;
+  const now = Date.now();
+  if (ipRateLimitMap.size >= MAX_RATE_LIMIT_ENTRIES) {
+    for (const [k, v] of ipRateLimitMap.entries()) {
+      if (now > v.resetAt) {
+        ipRateLimitMap.delete(k);
+      }
     }
-
-    if (record.count >= RATE_LIMIT_MAX_REQUESTS) {
-        return true;
+    if (ipRateLimitMap.size >= MAX_RATE_LIMIT_ENTRIES) {
+      ipRateLimitMap.clear();
     }
+  }
 
-    record.count += 1;
+  const record = ipRateLimitMap.get(ip);
+  if (!record || now > record.resetAt) {
+    ipRateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
     return false;
+  }
+
+  if (record.count >= RATE_LIMIT_MAX_REQUESTS) {
+    return true;
+  }
+
+  record.count += 1;
+  return false;
 }
 
-function isAllowedCaller(request: Request): boolean {
-    // Tolak akses langsung dari address bar browser (top-level navigation)
-    const secFetchDest = request.headers.get('sec-fetch-dest');
-    const secFetchMode = request.headers.get('sec-fetch-mode');
-    if (secFetchDest === 'document' || secFetchMode === 'navigate') {
-        return false;
-    }
+function isAllowedOrigin(request: Request): boolean {
+  const secFetchDest = request.headers.get("sec-fetch-dest");
+  const secFetchMode = request.headers.get("sec-fetch-mode");
+  if (secFetchDest === "document" || secFetchMode === "navigate") {
+    return false;
+  }
 
-    // Wajib berasal dari client Funfram
-    if (request.headers.get('x-funfram-client') !== '1') {
-        return false;
-    }
+  const origin = request.headers.get("origin");
+  if (!origin) {
+    return process.env.NODE_ENV !== "production";
+  }
 
-    // Validasi Origin jika dikirim oleh browser
-    const origin = request.headers.get('origin');
-    if (origin) {
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL;
-        const host = request.headers.get('host');
-        const isLocal = origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1');
-        const matchesAppUrl = appUrl ? origin === new URL(appUrl).origin : false;
-        const matchesHost = host ? origin === `https://${host}` || origin === `http://${host}` : false;
+  let parsedOrigin: URL;
+  try {
+    parsedOrigin = new URL(origin);
+  } catch {
+    return false;
+  }
 
-        if (!isLocal && !matchesAppUrl && !matchesHost) {
-            return false;
-        }
-    }
-
+  if (
+    process.env.NODE_ENV === "development" &&
+    (parsedOrigin.hostname === "localhost" || parsedOrigin.hostname === "127.0.0.1")
+  ) {
     return true;
+  }
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+  if (appUrl) {
+    try {
+      if (parsedOrigin.origin === new URL(appUrl).origin) {
+        return true;
+      }
+    } catch {
+      // ignore invalid NEXT_PUBLIC_APP_URL
+    }
+  }
+
+  const host = request.headers.get("host");
+  if (host && (parsedOrigin.origin === `https://${host}` || parsedOrigin.origin === `http://${host}`)) {
+    return true;
+  }
+
+  return false;
 }
 
 async function fetchMeteredIceServers() {
-    const meteredDomain = process.env.METERED_DOMAIN;
-    const meteredApiKey = process.env.METERED_API_KEY;
-
-    if (!meteredDomain || !meteredApiKey) {
-        return null;
-    }
-
-    const url = `https://${meteredDomain}/api/v1/turn/credentials?apiKey=${meteredApiKey}`;
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) {
-        console.error(`Metered API Error: ${res.status} ${res.statusText}`);
-        return null;
-    }
-
-    const meteredServers = await res.json();
-    if (Array.isArray(meteredServers)) {
-        return { iceServers: meteredServers };
-    }
-
+  const meteredDomain = process.env.METERED_DOMAIN;
+  const meteredApiKey = process.env.METERED_API_KEY;
+  if (!meteredDomain || !meteredApiKey) {
     return null;
+  }
+
+  const url = `https://${meteredDomain}/api/v1/turn/credentials?apiKey=${encodeURIComponent(meteredApiKey)}`;
+  const res = await fetch(url, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!res.ok) {
+    console.error(`Metered API returned HTTP ${res.status}`);
+    return null;
+  }
+
+  const meteredServers = await res.json();
+  if (Array.isArray(meteredServers)) {
+    return { iceServers: meteredServers };
+  }
+  return null;
 }
 
 export async function GET(request: Request) {
-    if (!isAllowedCaller(request)) {
-        return NextResponse.json(
-            { error: 'Forbidden' },
-            { status: 403, headers: { 'Cache-Control': 'no-store' } }
+  if (!isAllowedOrigin(request)) {
+    return NextResponse.json(
+      { error: "Forbidden" },
+      { status: 403, headers: NO_STORE_HEADERS }
+    );
+  }
+
+  const authHeader = request.headers.get("authorization") || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+  const claims = verifyTurnToken(token);
+  if (!claims) {
+    return NextResponse.json(
+      { error: "Unauthorized" },
+      { status: 401, headers: NO_STORE_HEADERS }
+    );
+  }
+
+  const clientIp = getClientIp(request);
+  if (isRateLimited(clientIp)) {
+    return NextResponse.json(
+      { error: "Too many requests" },
+      { status: 429, headers: NO_STORE_HEADERS }
+    );
+  }
+
+  try {
+    const turnKeyId = process.env.CLOUDFLARE_TURN_KEY_ID;
+    const apiToken = process.env.CLOUDFLARE_TURN_API_TOKEN;
+
+    if (turnKeyId && apiToken) {
+      try {
+        const response = await fetch(
+          `https://rtc.live.cloudflare.com/v1/turn/keys/${turnKeyId}/credentials/generate-ice-servers`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ ttl: 900 }), // 15 minutes
+            cache: "no-store",
+            signal: AbortSignal.timeout(5000),
+          }
         );
-    }
 
-    const clientIp = getClientIp(request);
-    if (isRateLimited(clientIp)) {
-        return NextResponse.json(
-            { error: 'Too many requests' },
-            { status: 429, headers: { 'Cache-Control': 'no-store' } }
-        );
-    }
-
-    try {
-        const turnKeyId = process.env.CLOUDFLARE_TURN_KEY_ID;
-        const apiToken = process.env.CLOUDFLARE_TURN_API_TOKEN;
-
-        if (turnKeyId && apiToken) {
-            try {
-                const response = await fetch(
-                    `https://rtc.live.cloudflare.com/v1/turn/keys/${turnKeyId}/credentials/generate-ice-servers`,
-                    {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${apiToken}`,
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            ttl: 86400, // 24 hours
-                        }),
-                        cache: 'no-store'
-                    }
-                );
-
-                if (response.ok) {
-                    const data = await response.json();
-                    return NextResponse.json(data, { headers: { 'Cache-Control': 'no-store' } });
-                }
-
-                const errorText = await response.text();
-                console.error('Cloudflare API Error:', errorText);
-            } catch (cfError) {
-                console.error('Cloudflare TURN request failed:', cfError);
-            }
-        } else {
-            console.warn('Cloudflare TURN credentials are not configured, checking Metered fallback');
+        if (response.ok) {
+          const data = await response.json();
+          return NextResponse.json(data, { headers: NO_STORE_HEADERS });
         }
-
-        // Optional fallback to Metered TURN if configured
-        const meteredData = await fetchMeteredIceServers();
-        if (meteredData) {
-            return NextResponse.json(meteredData, { headers: { 'Cache-Control': 'no-store' } });
-        }
-
-        return NextResponse.json(
-            { error: 'TURN credentials unavailable' },
-            { status: 503, headers: { 'Cache-Control': 'no-store' } }
-        );
-    } catch (error) {
-        console.error('Error in /api/turn-credentials:', error);
-        return NextResponse.json(
-            { error: 'Internal Server Error' },
-            { status: 500, headers: { 'Cache-Control': 'no-store' } }
-        );
+        console.error(`Cloudflare TURN API returned HTTP ${response.status}`);
+      } catch (cfError) {
+        console.error("Cloudflare TURN request failed:", cfError instanceof Error ? cfError.name : "error");
+      }
     }
+
+    const meteredData = await fetchMeteredIceServers();
+    if (meteredData) {
+      return NextResponse.json(meteredData, { headers: NO_STORE_HEADERS });
+    }
+
+    return NextResponse.json(
+      { error: "TURN credentials unavailable" },
+      { status: 503, headers: NO_STORE_HEADERS }
+    );
+  } catch {
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500, headers: NO_STORE_HEADERS }
+    );
+  }
 }

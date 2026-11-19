@@ -1,23 +1,27 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import CustomAlertModal from '@/components/ui/overlay/CustomAlertModal';
 
-const plusJakartaSans = Plus_Jakarta_Sans({ 
+const plusJakartaSans = Plus_Jakarta_Sans({
   subsets: ["latin"],
   variable: "--font-plus-jakarta-sans",
 });
 
+export const viewport: Viewport = {
+  themeColor: "#0ea5e9",
+};
+
 export const metadata: Metadata = {
-  title: "FunFram - Connect & Play in Real-Time",
-  description: "FunFram is a social platform where frames of friends meet random frames in video chat and play interactive drawing games.",
+  title: "FunFram - Obrolan Video & Mini-Game Seru",
+  description: "FunFram adalah platform sosial tempat kamu dan teman bisa bertemu teman baru lewat obrolan video dan 4 mini-game interaktif secara langsung.",
   icons: {
     icon: "/favicon.ico",
     apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
   },
   appleWebApp: {
     capable: true,
-    title: "Funfram",
+    title: "FunFram",
     statusBarStyle: "default",
   },
 };
@@ -28,7 +32,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`antialiased ${plusJakartaSans.variable}`}>
+    <html lang="id" className={`antialiased ${plusJakartaSans.variable}`}>
       <body className="antialiased font-sans">
         {children}
         <CustomAlertModal />

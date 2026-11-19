@@ -29,7 +29,7 @@ export default function VideoTile({ participant }: VideoTileProps) {
     const [isAutoplayBlocked, setIsAutoplayBlocked] = useState(false);
     const [showDeviceMenu, setShowDeviceMenu] = useState(false);
     const [showReportMenu, setShowReportMenu] = useState(false);
-    const [reportReason, setReportReason] = useState('Konten tidak pantas');
+    const [reportReason, setReportReason] = useState('nsfw');
 
     useEffect(() => {
         if (videoRef.current) {
@@ -95,7 +95,7 @@ export default function VideoTile({ participant }: VideoTileProps) {
 
     const handleUnmute = () => {
         if (videoRef.current) {
-            videoRef.current.muted = false;
+            videoRef.current.muted = Boolean(participant.isMuted);
             setIsAutoplayBlocked(false);
         }
     };
@@ -172,7 +172,7 @@ export default function VideoTile({ participant }: VideoTileProps) {
                     : 'bg-slate-50'
             }`}
         >
-            {participant.stream ? (
+            {participant.stream && !participant.isCameraOff ? (
                 <video
                     ref={videoRef}
                     autoPlay

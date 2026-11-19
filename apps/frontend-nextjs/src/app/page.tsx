@@ -25,14 +25,12 @@ function FunFramContent() {
 
   const {
     isMicOn,
-    isCamOn,
     localStreamRef,
     videoTrackRef,
     audioTrackRef,
     startCamera,
     stopLocalMedia,
     handleMic,
-    handleCam,
   } = useLocalMedia();
 
   const handleLeave = () => {
@@ -50,6 +48,7 @@ function FunFramContent() {
 
     // Return to lobby (FRAME state) instead of HOME
     useCallStore.setState({
+      frameId: null,
       sessionId: null,
       rightParticipants: [],
       leftParticipants: newLocalUser ? [newLocalUser] : [],
@@ -127,21 +126,15 @@ function FunFramContent() {
     // Start camera right after auth (user gesture satisfies browser policy)
     await startCamera();
 
-    const invite = searchParams.get('invite');
+    const inviteToken = searchParams.get('token') || searchParams.get('invite');
     const frameId = searchParams.get('frameId');
-    const sessionId = searchParams.get('sessionId');
-    const expire = searchParams.get('expire');
-    const nonce = searchParams.get('nonce');
 
-    if (invite && frameId && sessionId && expire && nonce) {
-      const api = ApiService.getInstance();
-      const verification = await api.verifyInviteLink(frameId, sessionId, expire, nonce, invite);
-      if (verification.isValid) {
-        ws.sendWhenOpen('PLAYER_JOIN', { frameId, username: confirmedUsername });
-      } else {
-        useCallStore.getState().showCustomAlert('Invitation link is invalid or has expired. Creating a new frame lobby instead.');
-        ws.sendWhenOpen('FRAME_CREATE', { username: confirmedUsername });
-      }
+    if (inviteToken && frameId) {
+      ws.sendWhenOpen('PLAYER_JOIN', {
+        frameId,
+        inviteToken,
+        username: confirmedUsername,
+      });
     } else {
       // Normal create-frame flow; backend responds with FRAME_CREATED
       ws.sendWhenOpen('FRAME_CREATE', { username: confirmedUsername });
@@ -192,9 +185,7 @@ function FunFramContent() {
             onLeave={handleLeave}
             onReturnToLobby={handleReturnToLobby}
             onMic={handleMic}
-            onCam={handleCam}
             isMicOn={isMicOn}
-            isCamOn={isCamOn}
           />
         )}
       </div>

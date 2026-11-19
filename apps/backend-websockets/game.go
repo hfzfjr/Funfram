@@ -1,12 +1,15 @@
 package main
 
 import (
+	"crypto/rand"
 	"fmt"
-	"math/rand"
+	"log/slog"
+	"math/big"
 	"os"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 var (
@@ -57,6 +60,17 @@ func getWordPool() []string {
 	return WordsPool
 }
 
+func cryptoRandIntn(n int) int {
+	if n <= 1 {
+		return 0
+	}
+	v, err := rand.Int(rand.Reader, big.NewInt(int64(n)))
+	if err != nil {
+		return 0
+	}
+	return int(v.Int64())
+}
+
 type GuessEvent struct {
 	ID         string `json:"id"`
 	PlayerID   string `json:"playerId"`
@@ -81,14 +95,21 @@ type GuessDrawingState struct {
 	Status          string         `json:"status"` // Waiting, Countdown, Drawing, Reveal, NextRound, Finished
 }
 
+type roundWinner struct {
+	playerID   string
+	playerName string
+	points     int
+}
+
 type GameEngine struct {
-	MatchID   string
-	Hub       *Hub
-	State     GuessDrawingState
-	UsedWords map[string]bool
-	mu        sync.RWMutex
-	stopChan  chan struct{}
-	stopOnce  sync.Once
+	MatchID    string
+	Hub        *Hub
+	State      GuessDrawingState
+	UsedWords  map[string]bool
+	mu         sync.RWMutex
+	stopChan   chan struct{}
+	stopOnce   sync.Once
+	roundWinCh chan roundWinner
 }
 
 func (ge *GameEngine) Stop() {
@@ -97,12 +118,42 @@ func (ge *GameEngine) Stop() {
 	})
 }
 
+func (ge *GameEngine) AppendCanvasEvent(ev interface{}) {
+	ge.mu.Lock()
+	defer ge.mu.Unlock()
+	if len(ge.State.CanvasEvents) >= 5000 {
+		return
+	}
+	ge.State.CanvasEvents = append(ge.State.CanvasEvents, ev)
+}
+
 func cloneScores(src map[string]int) map[string]int {
 	dst := make(map[string]int, len(src))
 	for k, v := range src {
 		dst[k] = v
 	}
 	return dst
+}
+
+func buildWordHint(secretWord string) string {
+	runes := []rune(secretWord)
+	if len(runes) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for i, r := range runes {
+		if i > 0 {
+			b.WriteRune(' ')
+		}
+		if r == ' ' || r == '-' {
+			b.WriteRune(r)
+		} else if i == 0 || i == len(runes)-1 {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('_')
+		}
+	}
+	return b.String()
 }
 
 func StartGame(hub *Hub, matchID string) *GameEngine {
@@ -116,7 +167,6 @@ func StartGameWithRounds(hub *Hub, matchID string, rounds int) *GameEngine {
 		rounds = 10
 	}
 
-	// Acquire hub.mu BEFORE enginesMu to maintain consistent lock ordering
 	hub.mu.RLock()
 	match, exists := hub.matches[matchID]
 	if !exists {
@@ -124,7 +174,6 @@ func StartGameWithRounds(hub *Hub, matchID string, rounds int) *GameEngine {
 		return nil
 	}
 
-	// Construct queue: alternating Frame A and Frame B players
 	leftIds := make([]string, 0, len(match.LobbyA.Members))
 	for id := range match.LobbyA.Members {
 		leftIds = append(leftIds, id)
@@ -138,12 +187,11 @@ func StartGameWithRounds(hub *Hub, matchID string, rounds int) *GameEngine {
 	enginesMu.Lock()
 	defer enginesMu.Unlock()
 
-	// Stop existing engine for this match if any
 	if existing, ok := engines[matchID]; ok {
 		existing.Stop()
 	}
 
-	baseQueue := make([]string, 0)
+	baseQueue := make([]string, 0, len(leftIds)+len(rightIds))
 	maxLength := len(leftIds)
 	if len(rightIds) > maxLength {
 		maxLength = len(rightIds)
@@ -162,8 +210,7 @@ func StartGameWithRounds(hub *Hub, matchID string, rounds int) *GameEngine {
 		queue = append(queue, baseQueue...)
 	}
 
-	// Initialize scores
-	scoreMap := make(map[string]int)
+	scoreMap := make(map[string]int, len(baseQueue))
 	for _, id := range queue {
 		scoreMap[id] = 0
 	}
@@ -177,13 +224,12 @@ func StartGameWithRounds(hub *Hub, matchID string, rounds int) *GameEngine {
 			Queue:        queue,
 			Status:       "Waiting",
 		},
-		stopChan: make(chan struct{}),
+		stopChan:   make(chan struct{}),
+		roundWinCh: make(chan roundWinner, 1),
 	}
 
 	engines[matchID] = engine
-
 	go engine.run()
-
 	return engine
 }
 
@@ -194,39 +240,54 @@ func GetGameEngine(matchID string) *GameEngine {
 }
 
 func (ge *GameEngine) run() {
-	// 2 seconds Waiting period
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("panic in GameEngine.run", "matchId", ge.MatchID, "recover", r)
+		}
+	}()
+
 	select {
 	case <-time.After(2 * time.Second):
 	case <-ge.stopChan:
 		return
 	}
 
-	ge.runRound(0)
+	ge.mu.RLock()
+	totalRounds := len(ge.State.Queue)
+	ge.mu.RUnlock()
+
+	for idx := 0; idx < totalRounds; idx++ {
+		if !ge.executeSingleRound(idx) {
+			return
+		}
+	}
+
+	ge.finishGame()
 }
 
-func (ge *GameEngine) runRound(queueIndex int) {
+// executeSingleRound runs one turn and returns false if the game was stopped.
+func (ge *GameEngine) executeSingleRound(queueIndex int) bool {
 	ge.mu.Lock()
 	if queueIndex >= len(ge.State.Queue) {
 		ge.mu.Unlock()
-		ge.finishGame()
-		return
+		return false
 	}
-
 	currentDrawerID := ge.State.Queue[queueIndex]
 
 	ge.Hub.mu.RLock()
-	// Check if drawer is still online
 	_, exists := ge.Hub.clients[currentDrawerID]
 	ge.Hub.mu.RUnlock()
-
 	if !exists {
 		ge.mu.Unlock()
-		// Drawer is offline, skip
-		ge.runRound(queueIndex + 1)
-		return
+		return true
 	}
 
-	// Pick random unused word from expanded pool
+	// Drain any stale winner signal from previous round
+	select {
+	case <-ge.roundWinCh:
+	default:
+	}
+
 	pool := getWordPool()
 	available := make([]string, 0, len(pool))
 	if ge.UsedWords == nil {
@@ -241,27 +302,24 @@ func (ge *GameEngine) runRound(queueIndex int) {
 		ge.UsedWords = make(map[string]bool)
 		available = pool
 	}
-	secretWord := available[rand.Intn(len(available))]
+	secretWord := available[cryptoRandIntn(len(available))]
 	ge.UsedWords[secretWord] = true
+	hintStr := buildWordHint(secretWord)
 
-	// Create word hint
-	hintRunes := []rune(secretWord)
-	hintStr := ""
-	for i, r := range hintRunes {
-		if i == 0 || i == len(hintRunes)-1 {
-			hintStr += string(r) + " "
-		} else {
-			hintStr += "_ "
-		}
-	}
-	if len(hintStr) > 0 {
-		hintStr = hintStr[:len(hintStr)-1] // trim trailing space
-	}
+	ge.State.CurrentRound = queueIndex + 1
+	ge.State.CurrentDrawerID = currentDrawerID
+	ge.State.CurrentWord = secretWord
+	ge.State.WordHint = hintStr
+	ge.State.Status = "Countdown"
+	ge.State.DrawTimer = 10
+	ge.State.TimeRemaining = 60
+	ge.State.CanvasEvents = make([]interface{}, 0)
+	ge.State.GuessEvents = make([]GuessEvent, 0)
+	ge.State.Winner = nil
+	ge.mu.Unlock()
 
-	// Update players presence states: DRAWING for drawer, GUESSING for others in session
 	ge.Hub.mu.Lock()
-	match, matchExists := ge.Hub.matches[ge.MatchID]
-	if matchExists {
+	if match, matchExists := ge.Hub.matches[ge.MatchID]; matchExists {
 		for _, member := range match.LobbyA.Members {
 			if member.ID == currentDrawerID {
 				member.Presence = "DRAWING"
@@ -279,80 +337,120 @@ func (ge *GameEngine) runRound(queueIndex int) {
 	}
 	ge.Hub.mu.Unlock()
 
-	ge.State.CurrentDrawerID = currentDrawerID
-	ge.State.CurrentWord = secretWord
-	ge.State.WordHint = hintStr
-	ge.State.Status = "Countdown"
-	ge.State.DrawTimer = 10
-	ge.State.TimeRemaining = 60
-	ge.State.CanvasEvents = make([]interface{}, 0)
-	ge.State.GuessEvents = make([]GuessEvent, 0)
-	ge.State.Winner = nil
-	ge.mu.Unlock()
-
-	// Broadcast DRAW_START to all match members
 	ge.broadcastDrawStart(currentDrawerID, secretWord, hintStr)
 
 	// 10s Countdown loop
+	countdownTicker := time.NewTicker(1 * time.Second)
 	for i := 9; i >= 0; i-- {
 		select {
-		case <-time.After(1 * time.Second):
+		case <-countdownTicker.C:
 			ge.mu.Lock()
 			if ge.State.Status != "Countdown" {
 				ge.mu.Unlock()
-				return
+				countdownTicker.Stop()
+				return true
 			}
 			ge.State.DrawTimer = i
 			ge.mu.Unlock()
 			ge.broadcastStateUpdate()
 		case <-ge.stopChan:
-			return
+			countdownTicker.Stop()
+			return false
 		}
 	}
+	countdownTicker.Stop()
 
-	// Transition to Drawing
 	ge.mu.Lock()
 	ge.State.Status = "Drawing"
 	ge.mu.Unlock()
 	ge.broadcastStateUpdate()
 
 	// 60s Drawing timer loop
+	drawTicker := time.NewTicker(1 * time.Second)
+	var win roundWinner
+	won := false
 	for i := 59; i >= 0; i-- {
 		select {
-		case <-time.After(1 * time.Second):
+		case win = <-ge.roundWinCh:
+			won = true
+		case <-drawTicker.C:
 			ge.mu.Lock()
 			if ge.State.Status != "Drawing" {
 				ge.mu.Unlock()
-				return
+				break
 			}
 			ge.State.TimeRemaining = i
 			ge.mu.Unlock()
 			ge.broadcastStateUpdate()
 		case <-ge.stopChan:
-			return
+			drawTicker.Stop()
+			return false
+		}
+		if won {
+			break
 		}
 	}
+	drawTicker.Stop()
 
-	// If timer expires without correct guess
-	ge.revealAnswer(queueIndex, "", 0)
+	// Transition atomically if timer expired without winner
+	ge.mu.Lock()
+	if !won {
+		select {
+		case win = <-ge.roundWinCh:
+			won = true
+		default:
+			ge.State.Status = "Reveal"
+			ge.State.Winner = nil
+		}
+	}
+	secretAnswer := ge.State.CurrentWord
+	scores := cloneScores(ge.State.Score)
+	ge.mu.Unlock()
+
+	ge.broadcastToMatch("ROUND_END", map[string]interface{}{
+		"winnerId":   win.playerID,
+		"winnerName": win.playerName,
+		"points":     win.points,
+		"answer":     secretAnswer,
+	})
+	ge.broadcastToMatch("SCORE_UPDATE", map[string]interface{}{
+		"scores": scores,
+	})
+
+	select {
+	case <-time.After(3 * time.Second):
+	case <-ge.stopChan:
+		return false
+	}
+
+	ge.mu.Lock()
+	ge.State.Status = "NextRound"
+	ge.mu.Unlock()
+	ge.broadcastStateUpdate()
+
+	select {
+	case <-time.After(1 * time.Second):
+	case <-ge.stopChan:
+		return false
+	}
+
+	return true
 }
 
 func (ge *GameEngine) SubmitGuess(playerID, username, text string) {
 	ge.mu.Lock()
-	defer ge.mu.Unlock()
-
 	if ge.State.Status != "Drawing" {
+		ge.mu.Unlock()
+		return
+	}
+	if playerID == ge.State.CurrentDrawerID {
+		ge.mu.Unlock()
 		return
 	}
 
-	if playerID == ge.State.CurrentDrawerID {
-		return // Drawer cannot guess
-	}
-
-	// Check if guess is correct
 	normalizedGuess := trimLower(text)
 	normalizedSecret := trimLower(ge.State.CurrentWord)
-	isCorrect := (normalizedGuess == normalizedSecret)
+	isCorrect := normalizedGuess != "" && normalizedSecret != "" && normalizedGuess == normalizedSecret
 
 	guessEvent := GuessEvent{
 		ID:         fmt.Sprintf("gss-%d", time.Now().UnixNano()),
@@ -362,15 +460,25 @@ func (ge *GameEngine) SubmitGuess(playerID, username, text string) {
 		IsCorrect:  isCorrect,
 		Timestamp:  time.Now().Format("15:04:05"),
 	}
-
 	ge.State.GuessEvents = append(ge.State.GuessEvents, guessEvent)
 
-	// Send GUESS_FEEDBACK to guesser
+	var wonNow bool
+	if isCorrect && ge.State.Winner == nil {
+		// Transition to Reveal immediately under lock so timer expiry cannot overwrite winner
+		ge.State.Status = "Reveal"
+		winnerCopy := username
+		ge.State.Winner = &winnerCopy
+		ge.State.Score[playerID] += 100
+		ge.State.Score[ge.State.CurrentDrawerID] += 50
+		wonNow = true
+	}
+	ge.mu.Unlock()
+
 	ge.Hub.mu.RLock()
-	client, exists := ge.Hub.clients[playerID]
+	client := ge.Hub.clients[playerID]
 	ge.Hub.mu.RUnlock()
-	if exists {
-		client.Send(map[string]interface{}{
+	if client != nil {
+		_ = client.Send(map[string]interface{}{
 			"event": "GUESS_FEEDBACK",
 			"payload": map[string]interface{}{
 				"correct": isCorrect,
@@ -378,92 +486,21 @@ func (ge *GameEngine) SubmitGuess(playerID, username, text string) {
 		})
 	}
 
-	// Broadcast the guess as chat message to all members of the match
 	ge.broadcastToMatch("CHAT_MESSAGE", map[string]interface{}{
 		"id":         guessEvent.ID,
 		"senderId":   playerID,
 		"senderName": username,
-		"text":       fmt.Sprintf("Guesses: %s", text),
+		"text":       fmt.Sprintf("Tebak: %s", text),
 		"side":       "left",
 		"timestamp":  time.Now().Format("15:04"),
 	})
 
-	if isCorrect && ge.State.Winner == nil {
-		// Mark winner immediately under lock so concurrent guesses cannot also score
-		winnerCopy := username
-		ge.State.Winner = &winnerCopy
-
-		// Award points: guesser gets 100, drawer gets 50
-		ge.State.Score[playerID] += 100
-		ge.State.Score[ge.State.CurrentDrawerID] += 50
-
-		// Extract queue index
-		qIdx := -1
-		for i, id := range ge.State.Queue {
-			if id == ge.State.CurrentDrawerID {
-				qIdx = i
-				break
-			}
+	if wonNow {
+		select {
+		case ge.roundWinCh <- roundWinner{playerID: playerID, playerName: username, points: 100}:
+		default:
 		}
-
-		// Reveal answer and stop drawing
-		go ge.revealAnswer(qIdx, username, 100)
 	}
-}
-
-func (ge *GameEngine) revealAnswer(queueIndex int, winnerName string, points int) {
-	ge.mu.Lock()
-	if ge.State.Status != "Drawing" && ge.State.Status != "Countdown" {
-		ge.mu.Unlock()
-		return
-	}
-
-	ge.State.Status = "Reveal"
-	winnerVal := winnerName
-	if winnerName == "" {
-		ge.State.Winner = nil
-	} else {
-		ge.State.Winner = &winnerVal
-	}
-	secretWord := ge.State.CurrentWord
-	ge.mu.Unlock()
-
-	// Broadcast ROUND_END to all members in session
-	ge.broadcastToMatch("ROUND_END", map[string]interface{}{
-		"winnerId": winnerVal,
-		"points":   points,
-		"answer":   secretWord,
-	})
-
-	// Broadcast SCORE_UPDATE to all members in session
-	ge.mu.Lock()
-	scores := cloneScores(ge.State.Score)
-	ge.mu.Unlock()
-	ge.broadcastToMatch("SCORE_UPDATE", map[string]interface{}{
-		"scores": scores,
-	})
-
-	// Wait 3 seconds in Reveal state
-	select {
-	case <-time.After(3 * time.Second):
-	case <-ge.stopChan:
-		return
-	}
-
-	ge.mu.Lock()
-	ge.State.Status = "NextRound"
-	ge.State.CurrentRound++
-	ge.mu.Unlock()
-	ge.broadcastStateUpdate()
-
-	// Wait 1 second in NextRound state before moving to next player
-	select {
-	case <-time.After(1 * time.Second):
-	case <-ge.stopChan:
-		return
-	}
-
-	ge.runRound(queueIndex + 1)
 }
 
 func (ge *GameEngine) finishGame() {
@@ -471,7 +508,6 @@ func (ge *GameEngine) finishGame() {
 	scores := cloneScores(ge.State.Score)
 	ge.mu.Unlock()
 
-	// Determine overall winner name(s)
 	topScore := -1
 	var topIDs []string
 	for pID, sc := range scores {
@@ -508,17 +544,16 @@ func (ge *GameEngine) finishGame() {
 
 	ge.broadcastStateUpdate()
 
-	// Update database leaderboard for all players if DB exists
 	if db != nil {
-		for pID, score := range scores {
-			err := UpdateScore(pID, "guess_drawing", score)
-			if err != nil {
-				fmt.Printf("Error updating score in DB for user %s: %v\n", pID, err)
+		go func(scMap map[string]int) {
+			for pID, score := range scMap {
+				if err := UpdateScore(pID, "guess_drawing", score); err != nil {
+					slog.Warn("Error updating score in DB", "userId", pID, "error", err)
+				}
 			}
-		}
+		}(scores)
 	}
 
-	// Wait 5 seconds, then return players to matched state (ONLINE presence)
 	select {
 	case <-time.After(5 * time.Second):
 	case <-ge.stopChan:
@@ -526,42 +561,40 @@ func (ge *GameEngine) finishGame() {
 	}
 
 	ge.Hub.mu.Lock()
-	match, matchExists := ge.Hub.matches[ge.MatchID]
-	if matchExists {
-		// Reset presences back to ONLINE
+	var lobbyAID, lobbyBID string
+	if match, matchExists := ge.Hub.matches[ge.MatchID]; matchExists {
 		for _, member := range match.LobbyA.Members {
 			member.Presence = "ONLINE"
 		}
 		for _, member := range match.LobbyB.Members {
 			member.Presence = "ONLINE"
 		}
-		// Reset statuses
 		match.LobbyA.Status = "MATCHED"
 		match.LobbyB.Status = "MATCHED"
+		lobbyAID = match.LobbyA.ID
+		lobbyBID = match.LobbyB.ID
 	}
 	ge.Hub.mu.Unlock()
 
-	// Broadcast match restore and transition back to meeting layout
+	// Do NOT re-emit MATCH_FOUND (prevents WebRTC reconnect flicker & chat wipe)
 	ge.broadcastToMatch("GAME_END", map[string]interface{}{})
-
-	// Update state in hub (re-verify match still exists)
-	ge.Hub.mu.Lock()
-	if match, ok := ge.Hub.matches[ge.MatchID]; ok {
-		session := match.ToSession()
-		ge.Hub.broadcastToLobbyLocked(match.LobbyA.ID, map[string]interface{}{
-			"event":   "MATCH_FOUND",
-			"payload": session,
-		})
-		ge.Hub.broadcastToLobbyLocked(match.LobbyB.ID, map[string]interface{}{
-			"event":   "MATCH_FOUND",
-			"payload": session,
+	if lobbyAID != "" {
+		ge.Hub.broadcastEventToLobby(lobbyAID, "PRESENCE_UPDATE", map[string]interface{}{
+			"frameId":  lobbyAID,
+			"presence": "ONLINE",
 		})
 	}
-	ge.Hub.mu.Unlock()
+	if lobbyBID != "" {
+		ge.Hub.broadcastEventToLobby(lobbyBID, "PRESENCE_UPDATE", map[string]interface{}{
+			"frameId":  lobbyBID,
+			"presence": "ONLINE",
+		})
+	}
 
-	// Remove engine from map
 	enginesMu.Lock()
-	delete(engines, ge.MatchID)
+	if engines[ge.MatchID] == ge {
+		delete(engines, ge.MatchID)
+	}
 	enginesMu.Unlock()
 }
 
@@ -581,14 +614,11 @@ func (ge *GameEngine) broadcastDrawStart(drawerID, secretWord, wordHint string) 
 	}
 	ge.Hub.mu.RUnlock()
 
-	// Drawer gets the full secret word, others get hint
 	for _, client := range members {
-		isDrawer := (client.ID == drawerID)
-		word := secretWord
-		if !isDrawer {
-			word = ""
+		word := ""
+		if client.ID == drawerID {
+			word = secretWord
 		}
-
 		_ = client.Send(map[string]interface{}{
 			"event": "DRAW_START",
 			"payload": map[string]interface{}{
@@ -605,15 +635,16 @@ func (ge *GameEngine) broadcastStateUpdate() {
 	ge.mu.RLock()
 	state := ge.State
 	state.Score = cloneScores(ge.State.Score)
-	if ge.State.CanvasEvents != nil {
+	if len(ge.State.CanvasEvents) > 0 {
 		state.CanvasEvents = append([]interface{}(nil), ge.State.CanvasEvents...)
 	}
-	if ge.State.GuessEvents != nil {
+	if len(ge.State.GuessEvents) > 20 {
+		state.GuessEvents = append([]GuessEvent(nil), ge.State.GuessEvents[len(ge.State.GuessEvents)-20:]...)
+	} else if len(ge.State.GuessEvents) > 0 {
 		state.GuessEvents = append([]GuessEvent(nil), ge.State.GuessEvents...)
 	}
 	ge.mu.RUnlock()
 
-	// Hide secret word for non-drawers
 	ge.Hub.mu.RLock()
 	match, exists := ge.Hub.matches[ge.MatchID]
 	if !exists {
@@ -634,7 +665,6 @@ func (ge *GameEngine) broadcastStateUpdate() {
 		if client.ID != state.CurrentDrawerID {
 			clientState.CurrentWord = ""
 		}
-
 		_ = client.Send(map[string]interface{}{
 			"event":   "GAME_STATE_UPDATE",
 			"payload": clientState,
@@ -647,15 +677,19 @@ func (ge *GameEngine) broadcastToMatch(event string, payload interface{}) {
 }
 
 func trimLower(s string) string {
-	importStr := ""
+	var b strings.Builder
+	b.Grow(len(s))
+	lastSpace := true
 	for _, r := range s {
-		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') {
-			if r >= 'A' && r <= 'Z' {
-				importStr += string(r + 32)
-			} else {
-				importStr += string(r)
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(unicode.ToLower(r))
+			lastSpace = false
+		} else if unicode.IsSpace(r) || r == '-' {
+			if !lastSpace {
+				b.WriteRune(' ')
+				lastSpace = true
 			}
 		}
 	}
-	return importStr
+	return strings.TrimSpace(b.String())
 }

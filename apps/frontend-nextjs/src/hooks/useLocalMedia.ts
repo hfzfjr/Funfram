@@ -35,12 +35,14 @@ async function requestUserMedia(options?: {
   const videoConstraint: MediaTrackConstraints = options?.videoDeviceId
     ? {
         deviceId: { exact: options.videoDeviceId },
-        width: { ideal: 1280 },
-        height: { ideal: 1280 },
+        width: { ideal: 720, max: 720 },
+        height: { ideal: 720, max: 720 },
+        frameRate: { ideal: 24, max: 30 },
       }
     : {
-        width: { ideal: 1280 },
-        height: { ideal: 1280 },
+        width: { ideal: 720, max: 720 },
+        height: { ideal: 720, max: 720 },
+        frameRate: { ideal: 24, max: 30 },
         facingMode: { ideal: facing },
       };
 

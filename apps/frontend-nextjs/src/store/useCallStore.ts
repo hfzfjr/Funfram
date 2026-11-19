@@ -53,8 +53,12 @@ export interface CallStore {
 
     // Identifiers
     localUser: Participant | null;
+    localFrameRole: 'A' | 'B';
     frameId: string | null;
     inviteToken: string | null;
+    sessionToken: string | null;
+    turnToken: string | null;
+    signalingToken: string | null;
     sessionId: string | null;
     frameOwnerId: string | null;
     deviceState: Record<string, DeviceState>;
@@ -162,8 +166,12 @@ export const useCallStore = create<CallStore>((set, get) => ({
     fsmState: 'HOME',
     matchmakingState: 'Waiting',
     localUser: null,
+    localFrameRole: 'A',
     frameId: null,
     inviteToken: null,
+    sessionToken: null,
+    turnToken: null,
+    signalingToken: null,
     sessionId: null,
     frameOwnerId: null,
     deviceState: {},
@@ -282,30 +290,35 @@ export const useCallStore = create<CallStore>((set, get) => ({
         const localUserId = state.localUser?.id;
         const localStream = state.localUser?.stream;
 
-        let localFrame = session.frameA;
-        let remoteFrame = session.frameB;
+        const isFrameB = Boolean(localUserId && session.frameB.members.some(p => p.id === localUserId));
+        const localFrameRole: 'A' | 'B' = isFrameB ? 'B' : 'A';
+        const localFrame = isFrameB ? session.frameB : session.frameA;
+        const remoteFrame = isFrameB ? session.frameA : session.frameB;
 
-        // Check if local user is in frameB
-        if (localUserId && session.frameB.members.some(p => p.id === localUserId)) {
-            localFrame = session.frameB;
-            remoteFrame = session.frameA;
+        const existingStreamById = new Map<string, MediaStream | null>();
+        for (const p of [...state.leftParticipants, ...state.rightParticipants]) {
+            if (p.stream) existingStreamById.set(p.id, p.stream);
+        }
+        if (localUserId && localStream) {
+            existingStreamById.set(localUserId, localStream);
         }
 
-        // Update leftParticipants with preserved stream for local user
-        const updatedLeftParticipants = localFrame.members.map(p => {
-            if (p.id === localUserId && localStream) {
-                return { ...p, stream: localStream };
-            }
-            return p;
-        });
-        const updatedRightParticipants = sortParticipants(remoteFrame.members);
+        const updatedLeftParticipants = localFrame.members.map(p => ({
+            ...p,
+            stream: existingStreamById.get(p.id) ?? p.stream ?? null,
+        }));
+        const updatedRightParticipants = sortParticipants(
+            remoteFrame.members.map(p => ({
+                ...p,
+                stream: existingStreamById.get(p.id) ?? p.stream ?? null,
+            }))
+        );
 
-        // Update localUser if it's in the new leftParticipants
         const updatedLocalUser = updatedLeftParticipants.find(p => p.id === localUserId) || state.localUser;
 
-        // Set state to MATCHED
         set({
             sessionId: session.sessionId,
+            localFrameRole,
             frameOwnerId: localFrame.ownerId,
             leftParticipants: sortParticipants(updatedLeftParticipants),
             rightParticipants: updatedRightParticipants,
@@ -433,17 +446,8 @@ export const useCallStore = create<CallStore>((set, get) => ({
     acceptGameInvite: () => {
         const { sessionId } = get();
         if (!sessionId) return;
-        // Accept game invite via backend
         WebSocketService.getInstance().sendEvent('GAME_ACCEPT', { sessionId });
-        // Update local state will be handled on server response
-        set({
-            fsmState: 'PLAYING',
-            gameInvite: null,
-            gameState: {
-                ...initialGameState(),
-                status: 'Waiting',
-            },
-        });
+        set({ gameInvite: null });
     },
 
     declineGameInvite: () => {
@@ -616,8 +620,12 @@ export const useCallStore = create<CallStore>((set, get) => ({
         fsmState: 'HOME',
         matchmakingState: 'Waiting',
         localUser: null,
+        localFrameRole: 'A',
         frameId: null,
         inviteToken: null,
+        sessionToken: null,
+        turnToken: null,
+        signalingToken: null,
         sessionId: null,
         frameOwnerId: null,
         deviceState: {},

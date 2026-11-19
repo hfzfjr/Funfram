@@ -90,15 +90,34 @@ function DrawingCanvas({ events, isDrawer, isActive }: CanvasProps) {
     }
   };
 
+  const lastRenderedCountRef = useRef(0);
+  const lastSizeRef = useRef({ width: 0, height: 0 });
+  const lastMoveSentAtRef = useRef(0);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    events.forEach((event) => drawEvent(ctx, event, canvas.width, canvas.height));
+    const sizeChanged =
+      lastSizeRef.current.width !== canvas.width ||
+      lastSizeRef.current.height !== canvas.height;
+    const shrunkOrReset = events.length < lastRenderedCountRef.current;
+
+    if (sizeChanged || shrunkOrReset || lastRenderedCountRef.current === 0) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      events.forEach((event) => drawEvent(ctx, event, canvas.width, canvas.height));
+      lastSizeRef.current = { width: canvas.width, height: canvas.height };
+      lastRenderedCountRef.current = events.length;
+      return;
+    }
+
+    for (let i = lastRenderedCountRef.current; i < events.length; i++) {
+      drawEvent(ctx, events[i], canvas.width, canvas.height);
+    }
+    lastRenderedCountRef.current = events.length;
   }, [events, canvasSize]);
 
   const sendCanvasEvent = (event: CanvasEvent) => {
@@ -110,6 +129,7 @@ function DrawingCanvas({ events, isDrawer, isActive }: CanvasProps) {
     if (!isDrawer || !isActive) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     isDrawingRef.current = true;
+    lastMoveSentAtRef.current = 0;
     setRedoStack([]);
     sendCanvasEvent({
       type: 'start',
@@ -121,6 +141,9 @@ function DrawingCanvas({ events, isDrawer, isActive }: CanvasProps) {
 
   const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (!isDrawingRef.current) return;
+    const now = performance.now();
+    if (now - lastMoveSentAtRef.current < 35) return;
+    lastMoveSentAtRef.current = now;
     sendCanvasEvent({
       type: 'move',
       ...getPoint(event),

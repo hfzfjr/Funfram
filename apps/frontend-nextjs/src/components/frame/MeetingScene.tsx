@@ -12,13 +12,13 @@ export default function MeetingScene() {
     let showLogo = true;
 
     if (fsmState === 'SEARCHING' || matchmakingState === 'Searching') {
-        placeholderText = "Searching for an opponent frame...";
+        placeholderText = "Mencari lawan ngobrol...";
         showLogo = false;
     } else if (matchmakingState === 'Cooldown') {
-        placeholderText = "Preparing connection...";
+        placeholderText = "Menyiapkan koneksi...";
         showLogo = false;
     } else if (fsmState === 'FRAME') {
-        placeholderText = "Waiting for match...";
+        placeholderText = "Siap mencari lawan...";
         showLogo = true;
     }
 
