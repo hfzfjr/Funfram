@@ -386,7 +386,11 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 			if disconnectedClient.DisconnectTimer != nil {
 				disconnectedClient.DisconnectTimer.Stop()
 			}
-			disconnectedClient.DisconnectTimer = time.AfterFunc(12*time.Second, func() {
+			gracePeriod := 5 * time.Minute
+			if _, inMatch := hub.lobbyToMatch[lobbyID]; inMatch {
+				gracePeriod = 15 * time.Second
+			}
+			disconnectedClient.DisconnectTimer = time.AfterFunc(gracePeriod, func() {
 				hub.mu.Lock()
 				stillDisconnected := disconnectedClient.Conn == disconnectedWS
 				hub.mu.Unlock()
@@ -396,7 +400,7 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 			})
 			hub.mu.Unlock()
 			disconnectedClient.closeCurrentTransport()
-			slog.Info("Client dropped unexpectedly; waiting 12s grace period", "userId", disconnectedClient.ID)
+			slog.Info("Client dropped unexpectedly; waiting grace period", "userId", disconnectedClient.ID, "gracePeriod", gracePeriod.String())
 			return
 		}
 		hub.mu.Unlock()
@@ -795,7 +799,6 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 			existing, ok := hub.clients[payload.UserID]
 			if !ok ||
 				existing.LobbyID != payload.FrameID ||
-				existing.Presence != "RECONNECTING" ||
 				!ConstantTimeEqual(existing.SessionToken, payload.SessionToken) {
 				hub.mu.Unlock()
 				_ = currentClient.Send(map[string]interface{}{
@@ -809,7 +812,19 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 				existing.DisconnectTimer.Stop()
 				existing.DisconnectTimer = nil
 			}
-			existing.Presence = "ONLINE"
+			restoredPresence := "ONLINE"
+			if lobby, lOk := hub.lobbies[existing.LobbyID]; lOk {
+				lobby.LastActivity = time.Now()
+				if lobby.Status == "MATCHING" {
+					restoredPresence = "MATCHING"
+				}
+			}
+			activeRoomID := existing.LobbyID
+			if mID, mOk := hub.lobbyToMatch[existing.LobbyID]; mOk {
+				activeRoomID = mID
+				restoredPresence = "PLAYING"
+			}
+			existing.Presence = restoredPresence
 			existing.ExplicitLeave = false
 			if currentClient.ID != existing.ID {
 				delete(hub.clients, currentClient.ID)
@@ -820,10 +835,6 @@ func handleConnections(hub *Hub, ws *websocket.Conn) {
 			client = existing
 			userID = existing.ID
 			connClients.Store(ws, existing)
-			activeRoomID := existing.LobbyID
-			if mID, mOk := hub.lobbyToMatch[existing.LobbyID]; mOk {
-				activeRoomID = mID
-			}
 			hub.mu.Unlock()
 
 			turnToken, _ := SignRoomToken(existing.ID, activeRoomID, "turn", 15*time.Minute)

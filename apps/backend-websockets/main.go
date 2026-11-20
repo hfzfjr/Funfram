@@ -92,7 +92,6 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	go StartIdleLobbyJanitor(ctx, hub, 30*time.Second, 5*time.Minute)
 	go StartOnlineCountDebouncer(ctx, hub, 3*time.Second)
 
 	go func() {

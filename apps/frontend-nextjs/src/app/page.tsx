@@ -68,7 +68,7 @@ function FunFramContent() {
 
     // Request a new frame from the backend so we get a valid frameId
     if (newLocalUser) {
-      WebSocketService.getInstance().sendEvent('FRAME_CREATE', { username: newLocalUser.name });
+      WebSocketService.getInstance().sendWhenOpen('FRAME_CREATE', { username: newLocalUser.name });
     }
 
     // Don't stop media - keep camera active in lobby

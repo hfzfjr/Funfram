@@ -439,7 +439,6 @@ export function useCallSignaling({
     };
 
     const onRejoinFailed = () => {
-      useCallStore.getState().showCustomAlert('Sesi sebelumnya telah berakhir. Anda akan dibuatkan frame baru.');
       onLeaveRef.current();
     };
 
@@ -489,7 +488,6 @@ export function useCallSignaling({
           }
         );
       } else if (errorMsg === 'frame idle timeout') {
-        useCallStore.getState().showCustomAlert('Frame ditutup karena sudah lebih dari 5 menit tidak ada aktivitas.');
         onLeaveRef.current();
       }
     };
