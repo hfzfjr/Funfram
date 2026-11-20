@@ -143,35 +143,34 @@ export class WebRtcService {
 
             const peerCount = this.peerConnections.size;
             const isRelay = this.peerIsRelay.get(participantId) || false;
-            const poorStreak = this.prevStats.get(participantId)?.poorStreak || 0;
 
-            let maxBitrate = 1_200_000;
+            let maxBitrate = 1_500_000;
             let scaleResolutionDownBy = 1.0;
             let maxFramerate = 30;
 
-            if (this.isGameDockActive || poorStreak >= 2) {
-                // Tier 4 (Game PiP / severe congestion)
+            if (this.isGameDockActive) {
+                // Tier 4 (Game PiP active)
                 maxBitrate = 250_000;
-                scaleResolutionDownBy = 2.5;
+                scaleResolutionDownBy = 2.0;
                 maxFramerate = 20;
             } else if (peerCount > 1) {
                 // Tier 3 (Co-Op 2v2 Mesh)
-                maxBitrate = 450_000;
+                maxBitrate = 550_000;
                 scaleResolutionDownBy = 1.5;
                 maxFramerate = 24;
             } else if (isRelay) {
                 // Tier 2 (1v1 TURN Relay)
-                maxBitrate = 750_000;
-                scaleResolutionDownBy = 1.5;
+                maxBitrate = 900_000;
+                scaleResolutionDownBy = 1.0;
                 maxFramerate = 30;
             } else {
                 // Tier 1 (1v1 Direct P2P)
-                maxBitrate = 1_200_000;
+                maxBitrate = 1_500_000;
                 scaleResolutionDownBy = 1.0;
                 maxFramerate = 30;
             }
 
-            params.degradationPreference = 'maintain-framerate';
+            params.degradationPreference = 'balanced';
             params.encodings[0] = {
                 ...params.encodings[0],
                 maxBitrate,
