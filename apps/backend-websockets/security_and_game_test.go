@@ -71,6 +71,22 @@ func TestCheckWSOrigin(t *testing.T) {
 	if CheckWSOrigin(reqEvil) {
 		t.Fatal("expected foreign origin to fail in production")
 	}
+
+	// Sibling subdomain fallback when ALLOWED_ORIGINS is unset
+	t.Setenv("ALLOWED_ORIGINS", "")
+	reqSibling := httptest.NewRequest(http.MethodGet, "/socket", nil)
+	reqSibling.Host = "funfram-socket.roomify.space"
+	reqSibling.Header.Set("Origin", "https://funfram.roomify.space")
+	if !CheckWSOrigin(reqSibling) {
+		t.Fatal("expected sibling subdomain over https to pass when ALLOWED_ORIGINS is empty")
+	}
+
+	reqForeign := httptest.NewRequest(http.MethodGet, "/socket", nil)
+	reqForeign.Host = "funfram-socket.roomify.space"
+	reqForeign.Header.Set("Origin", "https://evil.attacker.com")
+	if CheckWSOrigin(reqForeign) {
+		t.Fatal("expected different parent domain to fail")
+	}
 }
 
 func TestRejoinSessionRejectsHijackAndRepeatedCreate(t *testing.T) {

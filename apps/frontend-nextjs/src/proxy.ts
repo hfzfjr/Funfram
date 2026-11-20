@@ -34,8 +34,8 @@ function buildConnectSrc(): string {
 function buildCsp(): string {
   const isProd = process.env.NODE_ENV === "production";
   const scriptSrc = isProd
-    ? "'self' 'unsafe-inline' 'wasm-unsafe-eval'"
-    : "'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'";
+    ? "'self' 'unsafe-inline' 'wasm-unsafe-eval' https://static.cloudflareinsights.com"
+    : "'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://static.cloudflareinsights.com";
 
   return [
     "default-src 'self'",

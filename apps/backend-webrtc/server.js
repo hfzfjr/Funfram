@@ -68,6 +68,17 @@ function verifySignalingToken(token, expectedRoom) {
     }
 }
 
+function shareSameParentDomain(originHostname, requestHost) {
+    const oHost = (originHostname || '').toLowerCase().split(':')[0];
+    const rHost = (requestHost || '').toLowerCase().split(':')[0];
+    if (!oHost || !rHost) return false;
+    if (oHost === rHost) return true;
+    const oParts = oHost.split('.');
+    const rParts = rHost.split('.');
+    if (oParts.length < 3 || rParts.length < 3) return false;
+    return oParts.slice(1).join('.') === rParts.slice(1).join('.');
+}
+
 function isAllowedOrigin(req) {
     const origin = (req.headers.origin || '').trim();
     const appEnv = (process.env.APP_ENV || process.env.NODE_ENV || '').toLowerCase();
@@ -98,6 +109,10 @@ function isAllowedOrigin(req) {
         return allowList.includes(origin.toLowerCase());
     }
 
+    const reqHost = (req.headers['x-forwarded-host'] || req.headers.host || '').toString();
+    if (reqHost && parsed.protocol === 'https:' && shareSameParentDomain(parsed.hostname, reqHost)) {
+        return true;
+    }
     if (req.headers.host && parsed.host.toLowerCase() === req.headers.host.toLowerCase()) {
         return true;
     }

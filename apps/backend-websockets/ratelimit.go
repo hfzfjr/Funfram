@@ -117,6 +117,31 @@ func ExtractClientIP(r *http.Request) string {
 	return r.RemoteAddr
 }
 
+func shareSameParentDomain(originHost, requestHost string) bool {
+	oHost := strings.ToLower(strings.TrimSpace(originHost))
+	rHost := strings.ToLower(strings.TrimSpace(requestHost))
+	if h, _, err := net.SplitHostPort(oHost); err == nil {
+		oHost = h
+	}
+	if h, _, err := net.SplitHostPort(rHost); err == nil {
+		rHost = h
+	}
+	if oHost == "" || rHost == "" {
+		return false
+	}
+	if oHost == rHost {
+		return true
+	}
+	oParts := strings.Split(oHost, ".")
+	rParts := strings.Split(rHost, ".")
+	if len(oParts) < 3 || len(rParts) < 3 {
+		return false
+	}
+	oParent := strings.Join(oParts[1:], ".")
+	rParent := strings.Join(rParts[1:], ".")
+	return oParent == rParent
+}
+
 func CheckWSOrigin(r *http.Request) bool {
 	origin := strings.TrimSpace(r.Header.Get("Origin"))
 	appEnv := strings.ToLower(strings.TrimSpace(os.Getenv("APP_ENV")))
@@ -149,7 +174,13 @@ func CheckWSOrigin(r *http.Request) bool {
 		return false
 	}
 
-	// Fallback if APP_ENV is not explicitly production and ALLOWED_ORIGINS is empty: match request Host
+	reqHost := r.Header.Get("X-Forwarded-Host")
+	if reqHost == "" {
+		reqHost = r.Host
+	}
+	if reqHost != "" && strings.EqualFold(parsed.Scheme, "https") && shareSameParentDomain(parsed.Hostname(), reqHost) {
+		return true
+	}
 	if r.Host != "" && strings.EqualFold(parsed.Host, r.Host) {
 		return true
 	}
